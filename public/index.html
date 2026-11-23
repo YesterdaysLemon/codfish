@@ -26,6 +26,7 @@
   h1 .fish { display: inline-block; transition: transform .4s; }
   h1.swap .fish { transform: rotate(-20deg) scale(1.15); }
   .tag { color: var(--quiet); font-size: 14px; }
+  .open { margin-left: auto; font-size: 14px; color: var(--ink); }
   .controls { padding: 4px 22px 14px; display: flex; gap: 8px; flex-wrap: wrap; }
   .controls button { font: 13px var(--sans); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); color: var(--ink); cursor: pointer; }
@@ -67,6 +68,7 @@
 <header>
   <h1 id="name"><span class="fish">🐟</span> <span id="nameText">Codfish</span></h1>
   <span class="tag" id="tag">an analysis board for proofs</span>
+  <a class="open" href="/app">Open your workspace →</a>
 </header>
 <div class="controls" id="demos" role="group" aria-label="Demo proofs"></div>
 <main>
@@ -76,7 +78,7 @@
 </main>
 <footer>
   Demo board. The colours, notes and best moves are precomputed for these three proofs; the live engine (Lean checks,
-  counterexample search) isn't wired up yet. Lean statements are illustrative. The name follows the board:
+  counterexample search) isn't wired up yet. To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
   <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green.
 </footer>
 

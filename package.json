@@ -1,0 +1,13 @@
+{
+  "name": "codfish",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/worker.js --bundle --format=esm --loader:.html=text --outfile=dist/worker.js",
+    "test": "npm run build && node --no-warnings test/api.test.js",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

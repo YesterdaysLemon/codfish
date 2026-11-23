@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codfish workspace</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #1d1c1a; --quiet: #6b675e; --line: #d9d3c5;
+    --green: #2f8f4e; --yellow: #c99a12; --red: #c2412d; --grey: #9a958a;
+    --green-bg: #e3f2e7; --yellow-bg: #fbf1d3; --red-bg: #f8e1dc; --grey-bg: #eeebe4;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151614; --panel: #1d1f1c; --ink: #ece8df; --quiet: #9a968c; --line: #33352f;
+      --green-bg: #1d3325; --yellow-bg: #3a3118; --red-bg: #3d211c; --grey-bg: #262824; --grey: #77736a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font: 700 24px/1 var(--mono); letter-spacing: -0.5px; }
+  h1 .fish { display: inline-block; transition: transform .4s; }
+  h1.swap .fish { transform: rotate(-20deg) scale(1.15); }
+  .tag { color: var(--quiet); font-size: 13px; }
+  .spacer { flex: 1; }
+  .nav { display: flex; gap: 10px; align-items: center; font-size: 14px; flex-wrap: wrap; }
+  .btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .btn.danger { color: var(--red); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .link { background: none; border: 0; padding: 0; text-decoration: underline; color: var(--quiet); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .hidden { display: none !important; }
+  #signin { max-width: 380px; margin: 60px auto; padding: 24px; }
+  #signin h2 { margin: 0 0 6px; font-size: 20px; }
+  label { display: block; font-size: 13px; color: var(--quiet); margin: 12px 0 4px; }
+  input[type=text], input[type=email], input[type=password], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  textarea { font: 13px/1.5 var(--mono); min-height: 260px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .msg { font-size: 14px; margin-top: 10px; min-height: 1.2em; }
+  .msg.err { color: var(--red); }
+  #work { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 60px); }
+  @media (max-width: 800px) { #work { grid-template-columns: 1fr; } #side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 240px; } }
+  #side { border-right: 1px solid var(--line); padding: 12px; overflow-y: auto; }
+  #side .new { width: 100%; margin-bottom: 10px; }
+  .item { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+  .item:hover { background: var(--panel); }
+  .item.sel { background: var(--panel); outline: 1px solid var(--line); }
+  .item .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .item .k { font: 11px var(--mono); color: var(--quiet); }
+  .mini { display: flex; width: 34px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); flex: none; }
+  .mini i { display: block; height: 100%; }
+  #main { padding: 18px 20px 40px; min-width: 0; }
+  .tabs { display: flex; gap: 6px; margin: 10px 0; }
+  .tabs button { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+  .tabs button[aria-pressed=true] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .hint { font-size: 13px; color: var(--quiet); }
+  .titlebar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .titlebar h2 { margin: 0; font-size: 20px; flex: 1; min-width: 200px; }
+  .boardgrid { display: grid; grid-template-columns: 50px minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 1100px) { .boardgrid { grid-template-columns: 44px minmax(0, 1fr); } .moves { grid-column: 1 / -1; } }
+  .bar { position: relative; overflow: hidden; display: flex; flex-direction: column-reverse; min-height: 300px; }
+  .bar div { transition: height .5s; }
+  .bar .label { position: absolute; inset: auto 0 6px 0; text-align: center; font: 700 11px var(--mono); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .tree { padding: 8px; overflow-x: auto; min-height: 300px; }
+  .node { cursor: pointer; }
+  .node rect { stroke-width: 2; }
+  .node.sel rect { stroke-width: 3.5; }
+  .node text { font: 12px var(--sans); fill: var(--ink); pointer-events: none; }
+  .moves { padding: 4px 0; max-height: 70vh; overflow-y: auto; }
+  .move { padding: 9px 14px; border-left: 4px solid transparent; cursor: pointer; }
+  .move + .move { border-top: 1px solid var(--line); }
+  .move.sel { background: var(--bg); }
+  .move .head { display: flex; gap: 8px; align-items: baseline; }
+  .move .num { font: 700 12px var(--mono); color: var(--quiet); min-width: 22px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; transform: translateY(1px); }
+  .detail { display: none; margin: 6px 0 2px 30px; font-size: 13.5px; }
+  .move.sel .detail { display: block; }
+  .lean { font: 12px/1.45 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
+  .note { color: var(--quiet); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--quiet); margin-top: 10px; }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  details.src { margin-top: 14px; }
+  details.src summary { cursor: pointer; color: var(--quiet); font-size: 14px; }
+  #settings { max-width: 560px; padding: 20px 22px; }
+  #settings h2 { margin: 0 0 4px; font-size: 20px; }
+  #settings h3 { margin: 22px 0 4px; font-size: 15px; }
+  .credit { font: 700 22px var(--mono); }
+  .empty { color: var(--quiet); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="name"><span class="fish">🐟</span> <span id="nameText">Codfish</span></h1>
+  <span class="tag" id="tag">workspace</span>
+  <span class="spacer"></span>
+  <nav class="nav" id="nav">
+    <a href="/">Demo board</a>
+    <span id="who" class="hint"></span>
+    <button class="btn hidden" id="settingsBtn">Settings</button>
+    <button class="btn hidden" id="signoutBtn">Sign out</button>
+  </nav>
+</header>
+
+<section id="signin" class="panel hidden">
+  <h2>Sign in to Codfish</h2>
+  <p class="hint">We'll email you a 6-digit code. New here? Signing in creates your account.</p>
+  <form id="emailForm">
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <div class="row"><button class="btn primary" type="submit">Email me a code</button></div>
+  </form>
+  <form id="codeForm" class="hidden">
+    <label for="code">Code</label>
+    <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+    <div class="row"><button class="btn primary" type="submit">Sign in</button><button class="link" type="button" id="backBtn">Use another email</button></div>
+  </form>
+  <div class="msg" id="signinMsg" role="status"></div>
+</section>
+
+<section id="work" class="hidden">
+  <aside id="side">
+    <button class="btn primary new" id="newBtn">+ New proof</button>
+    <div id="list"></div>
+  </aside>
+  <main id="main"></main>
+</section>
+
+<section id="settingsView" class="hidden" style="padding:20px">
+  <div id="settings" class="panel"></div>
+</section>
+
+<script>
+const COLORS = {
+  green:     { fg: "var(--green)",  bg: "var(--green-bg)",  word: "verified" },
+  yellow:    { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "open" },
+  red:       { fg: "var(--red)",    bg: "var(--red-bg)",    word: "broken" },
+  unchecked: { fg: "var(--grey)",   bg: "var(--grey-bg)",   word: "unchecked" },
+};
+const RANK = { green: 0, unchecked: 1, yellow: 2, red: 3 };
+const TAGS = { Codfish: "an analysis board for proofs", Proofish: "proof-ish: plausible, not settled", Lemmafish: "proved. it's a lemma now." };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = micro => "$" + (micro / 1e6).toFixed(micro && Math.abs(micro) < 10000 ? 4 : 2);
+
+let me = null, proofs = [], current = null, selected = null, draftKind = "lean";
+
+async function call(method, path, data) {
+  const r = await fetch(path, { method, headers: data ? { "content-type": "application/json" } : {}, body: data ? JSON.stringify(data) : undefined, credentials: "same-origin" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || `Request failed (${r.status})`); e.status = r.status; throw e; }
+  return j;
+}
+
+function setName(statuses) {
+  let n = "Codfish";
+  if (statuses.length && statuses.every(s => s === "green")) n = "Lemmafish";
+  else if (statuses.includes("yellow") && !statuses.includes("red")) n = "Proofish";
+  const el = $("nameText");
+  if (el.textContent !== n) { $("name").classList.add("swap"); setTimeout(() => $("name").classList.remove("swap"), 400); el.textContent = n; }
+  $("tag").textContent = TAGS[n];
+  document.title = n + " workspace";
+}
+
+// ---------- sign in ----------
+
+let pendingEmail = "";
+$("emailForm").onsubmit = async e => {
+  e.preventDefault();
+  pendingEmail = $("email").value.trim();
+  $("signinMsg").className = "msg"; $("signinMsg").textContent = "Sending…";
+  try {
+    await call("POST", "/api/auth/start", { email: pendingEmail });
+    $("emailForm").classList.add("hidden"); $("codeForm").classList.remove("hidden");
+    $("signinMsg").textContent = `Sent a code to ${pendingEmail}. Check your spam folder if it isn't there in a minute.`;
+    $("code").focus();
+  } catch (err) { $("signinMsg").className = "msg err"; $("signinMsg").textContent = err.message; }
+};
+$("codeForm").onsubmit = async e => {
+  e.preventDefault();
+  try { await call("POST", "/api/auth/verify", { email: pendingEmail, code: $("code").value }); await boot(); }
+  catch (err) { $("signinMsg").className = "msg err"; $("signinMsg").textContent = err.message; }
+};
+$("backBtn").onclick = () => { $("codeForm").classList.add("hidden"); $("emailForm").classList.remove("hidden"); $("signinMsg").textContent = ""; };
+$("signoutBtn").onclick = async () => { await call("POST", "/api/auth/logout").catch(() => {}); location.reload(); };
+$("settingsBtn").onclick = () => showSettings();
+$("newBtn").onclick = () => showNew();
+
+async function boot() {
+  try { me = await call("GET", "/api/me"); }
+  catch (e) { if (e.status === 401) { $("signin").classList.remove("hidden"); $("work").classList.add("hidden"); return; } throw e; }
+  $("signin").classList.add("hidden"); $("work").classList.remove("hidden");
+  $("who").textContent = me.email; $("settingsBtn").classList.remove("hidden"); $("signoutBtn").classList.remove("hidden");
+  await refreshList();
+  const want = location.hash.slice(1);
+  if (want && proofs.some(p => p.id === want)) openProof(want); else if (proofs.length) openProof(proofs[0].id); else showNew();
+}
+
+// ---------- list ----------
+
+async function refreshList() {
+  proofs = await call("GET", "/api/proofs");
+  $("list").innerHTML = proofs.length ? proofs.map(p => {
+    const t = p.tally, w = c => t.total ? (100 * t[c] / t.total) : 0;
+    return `<div class="item ${current?.id === p.id ? "sel" : ""}" data-id="${p.id}">
+      <span class="mini">${["green", "yellow", "red", "unchecked"].map(c => `<i style="width:${w(c)}%;background:${COLORS[c].fg}"></i>`).join("")}</span>
+      <span class="t">${esc(p.title)}</span><span class="k">${p.kind === "lean" ? ".lean" : "sketch"}</span></div>`;
+  }).join("") : `<p class="hint">No proofs yet.</p>`;
+  document.querySelectorAll(".item").forEach(el => el.onclick = () => openProof(el.dataset.id));
+}
+
+// ---------- new proof ----------
+
+function showNew() {
+  current = null; selected = null; location.hash = "";
+  showWork(); setName([]);
+  document.querySelectorAll(".item").forEach(el => el.classList.remove("sel"));
+  const provider = me.settings.provider === "house" ? `the house model (pay-as-you-go)` : esc(me.providers[me.settings.provider]?.label || me.settings.provider) + " with your key";
+  $("main").innerHTML = `
+    <h2 style="margin:0">New proof</h2>
+    <div class="tabs" role="group" aria-label="Proof type">
+      <button data-kind="lean" aria-pressed="${draftKind === "lean"}">Lean file</button>
+      <button data-kind="sketch" aria-pressed="${draftKind === "sketch"}">Sketch of an idea</button>
+    </div>
+    <p class="hint" id="kindHint"></p>
+    <label for="ptitle">Title</label>
+    <input id="ptitle" type="text" maxlength="120" placeholder="Untitled proof">
+    <div id="fileRow"><label for="pfile">Drop in a .lean file, or paste below</label><input id="pfile" type="file" accept=".lean,text/plain"></div>
+    <label for="psrc">Proof</label>
+    <textarea id="psrc" spellcheck="false"></textarea>
+    <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><span class="msg" id="newMsg" role="status"></span></div>`;
+  const setKind = k => {
+    draftKind = k;
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === k));
+    $("fileRow").classList.toggle("hidden", k !== "lean");
+    $("kindHint").innerHTML = k === "lean"
+      ? "Each theorem, lemma and <code>have</code> becomes a node. <code>sorry</code> shows as yellow; everything else is grey until the Lean engine is connected."
+      : `A model splits your sketch into steps and writes each one as a Lean statement, using ${provider}. Change this in Settings. Model output is never marked green.`;
+    $("psrc").placeholder = k === "lean" ? "import Mathlib\n\ntheorem my_result : ... := by\n  sorry" : "Write the argument the way you'd explain it at a whiteboard.";
+  };
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setKind(b.dataset.kind));
+  setKind(draftKind);
+  $("pfile").onchange = async () => {
+    const f = $("pfile").files[0]; if (!f) return;
+    if (f.size > 100_000) { $("newMsg").className = "msg err"; $("newMsg").textContent = "That file is over 100 KB."; return; }
+    $("psrc").value = await f.text();
+    if (!$("ptitle").value) $("ptitle").value = f.name.replace(/\.lean$/, "");
+  };
+  $("saveBtn").onclick = async () => {
+    $("saveBtn").disabled = true; $("newMsg").className = "msg"; $("newMsg").textContent = draftKind === "sketch" ? "Saving, then asking the model…" : "Saving…";
+    try {
+      const p = await call("POST", "/api/proofs", { title: $("ptitle").value, kind: draftKind, source: $("psrc").value });
+      current = p; await refreshList(); await runAnalysis(p.id);
+    } catch (err) { $("newMsg").className = "msg err"; $("newMsg").textContent = err.message; $("saveBtn").disabled = false; }
+  };
+}
+
+// ---------- proof view ----------
+
+async function openProof(id) {
+  showWork();
+  current = await call("GET", `/api/proofs/${id}`); selected = null; location.hash = id;
+  document.querySelectorAll(".item").forEach(el => el.classList.toggle("sel", el.dataset.id === id));
+  renderProof();
+}
+
+async function runAnalysis(id, msgEl) {
+  try { current = await call("POST", `/api/proofs/${id}/analyze`); }
+  catch (err) { current = await call("GET", `/api/proofs/${id}`); renderProof(err.message); await refreshList(); return; }
+  me = await call("GET", "/api/me").catch(() => me);
+  renderProof(); await refreshList();
+}
+
+function settle(steps) {
+  // A node's colour is the worst of its own and its children's.
+  const kids = id => steps.filter(s => s.parent === id);
+  const eff = new Map();
+  const visit = s => {
+    if (eff.has(s.id)) return eff.get(s.id);
+    eff.set(s.id, s.status);
+    let worst = s.status;
+    for (const k of kids(s.id)) { const c = visit(k); if (RANK[c] > RANK[worst]) worst = c; }
+    eff.set(s.id, worst); return worst;
+  };
+  steps.forEach(visit);
+  return steps.map(s => ({ ...s, eff: eff.get(s.id) }));
+}
+
+function renderProof(error) {
+  const p = current, a = p.analysis;
+  const steps = a ? settle(a.steps) : [];
+  setName(steps.map(s => s.eff));
+  const by = a ? (a.source === "lean" ? "Read from the Lean file (Lean not run yet)." : `Formalized by ${esc(a.model)}${a.chargedMicro ? `, charged ${money(a.chargedMicro)}` : ""}.`) : "";
+  $("main").innerHTML = `
+    <div class="titlebar"><h2>${esc(p.title)}</h2>
+      <button class="btn" id="againBtn">${a ? "Analyze again" : "Analyze"}</button>
+      <button class="btn" id="editBtn">Edit</button>
+      <button class="btn danger" id="delBtn">Delete</button></div>
+    <div class="hint">${p.kind === "lean" ? "Lean file" : "Sketch"} · ${by}</div>
+    <div class="msg ${error ? "err" : ""}" id="pMsg" role="status">${esc(error || "")}</div>
+    ${a ? `<div class="boardgrid">
+      <div class="panel bar" id="bar" aria-label="Eval bar"></div>
+      <div class="panel tree" id="tree"></div>
+      <div class="panel moves" id="moves"></div></div>
+      <div class="legend">${Object.entries(COLORS).map(([k, c]) => `<span><i class="dot" style="background:${c.fg}"></i>${c.word}</span>`).join("")}</div>`
+      : `<div class="empty">Not analyzed yet.</div>`}
+    <details class="src"><summary>Source</summary><div class="lean">${esc(p.source)}</div></details>`;
+  $("againBtn").onclick = async () => { $("againBtn").disabled = true; $("pMsg").className = "msg"; $("pMsg").textContent = "Analyzing…"; await runAnalysis(p.id); };
+  $("delBtn").onclick = async () => {
+    if (!confirmDelete()) return;
+    await call("DELETE", `/api/proofs/${p.id}`); current = null; await refreshList(); proofs.length ? openProof(proofs[0].id) : showNew();
+  };
+  $("editBtn").onclick = () => showEdit();
+  if (a) { renderBar(steps); renderTree(steps); renderMoves(steps); }
+}
+
+let armed = false;
+function confirmDelete() {
+  // Two clicks instead of a browser dialog.
+  if (armed) return true;
+  armed = true; $("delBtn").textContent = "Click again to delete"; setTimeout(() => { armed = false; const b = $("delBtn"); if (b) b.textContent = "Delete"; }, 3000);
+  return false;
+}
+
+function showEdit() {
+  const p = current;
+  $("main").innerHTML = `<h2 style="margin:0">Edit</h2>
+    <label for="ptitle">Title</label><input id="ptitle" type="text" maxlength="120" value="${esc(p.title)}">
+    <label for="psrc">${p.kind === "lean" ? "Lean file" : "Sketch"}</label><textarea id="psrc" spellcheck="false">${esc(p.source)}</textarea>
+    <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><button class="btn" id="cancelBtn">Cancel</button><span class="msg" id="newMsg"></span></div>`;
+  $("cancelBtn").onclick = () => renderProof();
+  $("saveBtn").onclick = async () => {
+    $("saveBtn").disabled = true;
+    try { current = await call("PUT", `/api/proofs/${p.id}`, { title: $("ptitle").value, source: $("psrc").value }); await runAnalysis(p.id); }
+    catch (err) { $("newMsg").className = "msg err"; $("newMsg").textContent = err.message; $("saveBtn").disabled = false; }
+  };
+}
+
+function renderBar(steps) {
+  const total = steps.length, count = c => steps.filter(s => s.status === c).length;
+  $("bar").innerHTML = ["green", "yellow", "red", "unchecked"].map(c => `<div style="height:${100 * count(c) / total}%;background:${COLORS[c].fg}"></div>`).join("")
+    + `<span class="label">${count("green")}/${total}</span>`;
+}
+
+function renderTree(steps) {
+  const nodeW = 150, nodeH = 38, gapX = 14, gapY = 78;
+  const kids = id => steps.filter(s => s.parent === id);
+  const roots = steps.filter(s => s.parent === null);
+  const pos = {}; let leaf = 0, maxDepth = 0;
+  const place = (s, d) => {
+    maxDepth = Math.max(maxDepth, d);
+    const ks = kids(s.id);
+    if (!ks.length) { pos[s.id] = { x: leaf++ * (nodeW + gapX) + nodeW / 2, y: d * gapY + nodeH / 2 + 6 }; return; }
+    ks.forEach(k => place(k, d + 1));
+    pos[s.id] = { x: (pos[ks[0].id].x + pos[ks[ks.length - 1].id].x) / 2, y: d * gapY + nodeH / 2 + 6 };
+  };
+  roots.forEach(r => place(r, 0));
+  const W = Math.max(leaf * (nodeW + gapX), nodeW + 20), H = (maxDepth + 1) * gapY;
+  const clip = s => s.length > 22 ? s.slice(0, 21) + "…" : s;
+  const edges = steps.filter(s => s.parent !== null && pos[s.parent]).map(s => {
+    const a = pos[s.parent], b = pos[s.id], my = (a.y + b.y) / 2;
+    return `<path d="M${a.x} ${a.y + nodeH / 2} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y - nodeH / 2}" fill="none" stroke="${COLORS[s.eff].fg}" stroke-width="${s.eff === "green" ? 5 : 2.5}" stroke-linecap="round" opacity=".55"/>`;
+  }).join("");
+  const nodes = steps.map(s => {
+    const p = pos[s.id]; if (!p) return "";
+    const c = COLORS[s.eff];
+    return `<g class="node ${selected === s.id ? "sel" : ""}" data-id="${s.id}" tabindex="0" role="button" aria-label="Step ${s.id}: ${esc(s.short)}, ${c.word}">
+      <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9" fill="${c.bg}" stroke="${c.fg}"/>
+      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${esc(clip(s.short))}</text></g>`;
+  }).join("");
+  $("tree").innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:${H}px" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Proof tree">${edges}${nodes}</svg>`;
+  document.querySelectorAll(".node").forEach(g => { const pick = () => select(+g.dataset.id); g.onclick = pick; g.onkeydown = e => (e.key === "Enter" || e.key === " ") && pick(); });
+}
+
+function renderMoves(steps) {
+  $("moves").innerHTML = steps.map(s => {
+    const c = COLORS[s.eff], own = COLORS[s.status];
+    const inherited = s.eff !== s.status ? ` <span class="hint">(${own.word} itself; ${c.word} because of a step below)</span>` : "";
+    return `<div class="move ${selected === s.id ? "sel" : ""}" data-id="${s.id}" style="border-left-color:${c.fg}">
+      <div class="head"><span class="num">${s.id}.</span><span class="dot" style="background:${c.fg}"></span><span>${esc(s.text || s.short)}</span></div>
+      <div class="detail">${s.lean ? `<div class="lean">${esc(s.lean)}</div>` : ""}<div class="note"><b>${c.word}.</b>${inherited} ${esc(s.note)}</div></div></div>`;
+  }).join("");
+  document.querySelectorAll(".move").forEach(m => m.onclick = () => select(+m.dataset.id));
+}
+
+function select(id) {
+  selected = selected === id ? null : id;
+  const steps = settle(current.analysis.steps);
+  renderTree(steps); renderMoves(steps);
+  document.querySelector(`.move[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+// ---------- settings ----------
+
+function showWork() { $("settingsView").classList.add("hidden"); $("work").classList.remove("hidden"); }
+
+function showSettings() {
+  $("work").classList.add("hidden"); $("settingsView").classList.remove("hidden");
+  const s = me.settings, keys = Object.fromEntries(me.keys.map(k => [k.provider, k.last4]));
+  const opts = [["house", "House model (pay-as-you-go)"], ...Object.entries(me.providers).map(([k, v]) => [k, v.label + " (your key)"])];
+  $("settings").innerHTML = `
+    <h2>Settings</h2><p class="hint">${esc(me.email)}</p>
+    <h3>Model for sketches</h3>
+    <label for="prov">Use</label>
+    <select id="prov">${opts.map(([k, l]) => `<option value="${k}" ${s.provider === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+    <div id="provDetail"></div>
+    <div class="row"><button class="btn primary" id="saveSettings">Save</button><button class="btn" id="closeSettings">Back to workspace</button><span class="msg" id="setMsg" role="status"></span></div>
+    <h3>House model credit</h3>
+    <div class="credit">${me.admin ? "Owner: not metered" : money(me.creditMicro)}</div>
+    <p class="hint">The house model (${esc(me.house.model)} on Cloudflare) is charged at cost plus a margin, from prepaid credit; a call needs at least ${money(me.house.minCreditMicro)} of credit. Buying credit isn't available yet. With your own key, Codfish is free and your provider bills you directly. Today: ${me.today.calls} house call${me.today.calls === 1 ? "" : "s"}, ${money(me.today.chargedMicro)}.</p>
+    <h3>Account</h3>
+    <p class="hint">Deleting your account removes your proofs, keys and settings for good.</p>
+    <button class="btn danger" id="delAcct">Delete my account</button>`;
+  const detail = () => {
+    const p = $("prov").value;
+    if (p === "house") { $("provDetail").innerHTML = `<p class="hint">No key needed. Charged from your credit.</p>`; return; }
+    const info = me.providers[p];
+    $("provDetail").innerHTML = `
+      <label for="model">Model name</label>
+      <input id="model" type="text" value="${esc(s.models[p] || "")}" placeholder="${esc(info.defaultModel || "as your provider names it")}">
+      ${p === "custom" ? `<label for="base">Base URL (OpenAI-compatible)</label><input id="base" type="text" value="${esc(s.baseUrl)}" placeholder="https://…/v1">` : ""}
+      <label for="key">API key ${keys[p] ? `<span class="hint">(saved, ends in ${esc(keys[p])})</span>` : ""}</label>
+      <input id="key" type="password" autocomplete="off" placeholder="${keys[p] ? "Leave blank to keep the saved key" : "Paste your key"}">
+      ${keys[p] ? `<div class="row"><button class="link" id="forget">Remove saved key</button></div>` : ""}
+      <p class="hint">Keys are encrypted before they're stored and are only sent to ${esc(info.label)}.</p>`;
+    if ($("forget")) $("forget").onclick = async () => { await call("DELETE", `/api/keys/${p}`); me = await call("GET", "/api/me"); showSettings(); };
+  };
+  $("prov").onchange = detail; detail();
+  $("closeSettings").onclick = () => { showWork(); current ? renderProof() : showNew(); };
+  $("saveSettings").onclick = async () => {
+    const p = $("prov").value;
+    try {
+      const models = { ...s.models }; if ($("model")) models[p] = $("model").value;
+      await call("PUT", "/api/settings", { provider: p, models, baseUrl: $("base") ? $("base").value : s.baseUrl });
+      if ($("key") && $("key").value.trim()) await call("PUT", `/api/keys/${p}`, { key: $("key").value.trim() });
+      me = await call("GET", "/api/me"); showSettings(); $("setMsg").textContent = "Saved.";
+    } catch (err) { $("setMsg").className = "msg err"; $("setMsg").textContent = err.message; }
+  };
+  let sure = false;
+  $("delAcct").onclick = async () => {
+    if (!sure) { sure = true; $("delAcct").textContent = "Click again to delete everything"; return; }
+    await call("DELETE", "/api/me"); location.reload();
+  };
+}
+
+boot().catch(err => { $("main").textContent = err.message; });
+</script>
+</body>
+</html>

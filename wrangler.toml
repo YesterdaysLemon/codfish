@@ -2,7 +2,26 @@ name = "codfish"
 main = "src/worker.js"
 compatibility_date = "2026-11-01"
 
-# Serve the board's HTML as a text module.
+# Serve the pages as text modules.
 rules = [{ type = "Text", globs = ["**/*.html"], fallthrough = false }]
 
 routes = [{ pattern = "codfish.alirezaafshan.com", custom_domain = true }]
+
+[vars]
+ADMIN_EMAILS = "alirezaafshan4@gmail.com"   # not metered on the house model
+HOUSE_DAILY_NEURONS_CAP = "300000"          # kill switch: about $3.30/day of Workers AI across all users
+MAIL_FROM = "codfish@alirezaafshan.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "codfish"
+database_id = "ba2b0def-71f2-49b7-8036-1809fbe7d0d0"
+
+[ai]
+binding = "AI"
+
+[[send_email]]
+name = "EMAIL"
+
+# SECRET (session/code HMACs and API-key encryption) is a Worker secret: `wrangler secret put SECRET`.
+# Never rotate it casually: rotating it makes every saved API key unreadable.
