@@ -64,6 +64,17 @@ test("pages are served", async () => {
   assert.equal((await req("GET", "/nope")).status, 404);
 });
 
+test("look files are served", async () => {
+  const css = await req("GET", "/themes.css");
+  assert.equal(css.status, 200);
+  assert.equal(css.headers.get("content-type"), "text/css; charset=utf-8");
+  for (const t of ["heartwood-light", "heartwood-night", "proofruns", "paper", "chalk", "aquarium", "infoview"]) assert.match(css.body, new RegExp(`data-theme="${t}"`));
+  const js = await req("GET", "/themes.js");
+  assert.equal(js.status, 200);
+  assert.match(js.body, /window\.CodfishTheme/);
+  assert.match((await req("GET", "/")).headers.get("content-security-policy"), /fonts\.gstatic\.com/);
+});
+
 test("API needs a session and a same-origin request", async () => {
   assert.equal((await req("GET", "/api/me")).status, 401);
   const r = await worker.fetch(new Request(ORIGIN + "/api/auth/start", { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.test" }, body: "{}" }), env);
@@ -167,6 +178,10 @@ test("own API key: stored encrypted, used, never charged", async () => {
     assert.equal(seen.body.model, "grok-test");
     assert.equal(a.body.analysis.chargedMicro, 0);
     assert.equal((await req("PUT", "/api/settings", { provider: "custom", baseUrl: "http://insecure" }, bobCookie)).status, 400);
+    assert.equal((await req("PUT", "/api/settings", { provider: "xai", models: { xai: "grok-test" }, theme: "chalk" }, bobCookie)).status, 200);
+    assert.equal((await req("GET", "/api/me", null, bobCookie)).body.settings.theme, "chalk");
+    await req("PUT", "/api/settings", { provider: "xai", theme: "<script>" }, bobCookie);
+    assert.equal((await req("GET", "/api/me", null, bobCookie)).body.settings.theme, "auto");
   } finally { globalThis.fetch = realFetch; }
 });
 

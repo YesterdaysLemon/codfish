@@ -5,27 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Codfish workspace</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+<link rel="stylesheet" href="/themes.css">
+<script src="/themes.js"></script>
 <style>
-  :root {
-    --bg: #f4f1ea; --panel: #fffdf8; --ink: #1d1c1a; --quiet: #6b675e; --line: #d9d3c5;
-    --green: #2f8f4e; --yellow: #c99a12; --red: #c2412d; --grey: #9a958a;
-    --green-bg: #e3f2e7; --yellow-bg: #fbf1d3; --red-bg: #f8e1dc; --grey-bg: #eeebe4;
-    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #151614; --panel: #1d1f1c; --ink: #ece8df; --quiet: #9a968c; --line: #33352f;
-      --green-bg: #1d3325; --yellow-bg: #3a3118; --red-bg: #3d211c; --grey-bg: #262824; --grey: #77736a;
-    }
-  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
   a { color: inherit; }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--line); }
-  h1 { margin: 0; font: 700 24px/1 var(--mono); letter-spacing: -0.5px; }
+  h1 { margin: 0; font: 700 24px/1 var(--display); letter-spacing: -0.5px; }
   h1 .fish { display: inline-block; transition: transform .4s; }
   h1.swap .fish { transform: rotate(-20deg) scale(1.15); }
   .tag { color: var(--quiet); font-size: 13px; }
@@ -103,6 +92,7 @@
   <span class="tag" id="tag">workspace</span>
   <span class="spacer"></span>
   <nav class="nav" id="nav">
+    <span id="lookPick"></span>
     <a href="/">Demo board</a>
     <span id="who" class="hint"></span>
     <button class="btn hidden" id="settingsBtn">Settings</button>
@@ -145,6 +135,7 @@ const COLORS = {
   red:       { fg: "var(--red)",    bg: "var(--red-bg)",    word: "broken" },
   unchecked: { fg: "var(--grey)",   bg: "var(--grey-bg)",   word: "unchecked" },
 };
+const GLYPH = { green: "✓", yellow: "?", red: "✗", unchecked: "·" };
 const RANK = { green: 0, unchecked: 1, yellow: 2, red: 3 };
 const TAGS = { Codfish: "an analysis board for proofs", Proofish: "proof-ish: plausible, not settled", Lemmafish: "proved. it's a lemma now." };
 const $ = id => document.getElementById(id);
@@ -198,6 +189,7 @@ async function boot() {
   try { me = await call("GET", "/api/me"); }
   catch (e) { if (e.status === 401) { $("signin").classList.remove("hidden"); $("work").classList.add("hidden"); return; } throw e; }
   $("signin").classList.add("hidden"); $("work").classList.remove("hidden");
+  if (me.settings.theme && me.settings.theme !== CodfishTheme.get()) CodfishTheme.set(me.settings.theme, { quiet: true });
   $("who").textContent = me.email; $("settingsBtn").classList.remove("hidden"); $("signoutBtn").classList.remove("hidden");
   await refreshList();
   const want = location.hash.slice(1);
@@ -310,7 +302,7 @@ function renderProof(error) {
       <div class="panel bar" id="bar" aria-label="Eval bar"></div>
       <div class="panel tree" id="tree"></div>
       <div class="panel moves" id="moves"></div></div>
-      <div class="legend">${Object.entries(COLORS).map(([k, c]) => `<span><i class="dot" style="background:${c.fg}"></i>${c.word}</span>`).join("")}</div>`
+      <div class="legend">${Object.entries(COLORS).map(([k, c]) => `<span><span class="glyph" style="color:${c.fg}">${GLYPH[k]}</span>${c.word}</span>`).join("")}</div>`
       : `<div class="empty">Not analyzed yet.</div>`}
     <details class="src"><summary>Source</summary><div class="lean">${esc(p.source)}</div></details>`;
   $("againBtn").onclick = async () => { $("againBtn").disabled = true; $("pMsg").className = "msg"; $("pMsg").textContent = "Analyzing…"; await runAnalysis(p.id); };
@@ -374,7 +366,7 @@ function renderTree(steps) {
     const c = COLORS[s.eff];
     return `<g class="node ${selected === s.id ? "sel" : ""}" data-id="${s.id}" tabindex="0" role="button" aria-label="Step ${s.id}: ${esc(s.short)}, ${c.word}">
       <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9" fill="${c.bg}" stroke="${c.fg}"/>
-      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${esc(clip(s.short))}</text></g>`;
+      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${GLYPH[s.eff]} ${esc(clip(s.short))}</text></g>`;
   }).join("");
   $("tree").innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:${H}px" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Proof tree">${edges}${nodes}</svg>`;
   document.querySelectorAll(".node").forEach(g => { const pick = () => select(+g.dataset.id); g.onclick = pick; g.onkeydown = e => (e.key === "Enter" || e.key === " ") && pick(); });
@@ -385,7 +377,7 @@ function renderMoves(steps) {
     const c = COLORS[s.eff], own = COLORS[s.status];
     const inherited = s.eff !== s.status ? ` <span class="hint">(${own.word} itself; ${c.word} because of a step below)</span>` : "";
     return `<div class="move ${selected === s.id ? "sel" : ""}" data-id="${s.id}" style="border-left-color:${c.fg}">
-      <div class="head"><span class="num">${s.id}.</span><span class="dot" style="background:${c.fg}"></span><span>${esc(s.text || s.short)}</span></div>
+      <div class="head"><span class="num">${s.id}.</span><span class="glyph" style="color:${c.fg}">${GLYPH[s.eff]}</span><span>${esc(s.text || s.short)}</span></div>
       <div class="detail">${s.lean ? `<div class="lean">${esc(s.lean)}</div>` : ""}<div class="note"><b>${c.word}.</b>${inherited} ${esc(s.note)}</div></div></div>`;
   }).join("");
   document.querySelectorAll(".move").forEach(m => m.onclick = () => select(+m.dataset.id));
@@ -439,7 +431,7 @@ function showSettings() {
     const p = $("prov").value;
     try {
       const models = { ...s.models }; if ($("model")) models[p] = $("model").value;
-      await call("PUT", "/api/settings", { provider: p, models, baseUrl: $("base") ? $("base").value : s.baseUrl });
+      await call("PUT", "/api/settings", { provider: p, models, baseUrl: $("base") ? $("base").value : s.baseUrl, theme: CodfishTheme.get() });
       if ($("key") && $("key").value.trim()) await call("PUT", `/api/keys/${p}`, { key: $("key").value.trim() });
       me = await call("GET", "/api/me"); showSettings(); $("setMsg").textContent = "Saved.";
     } catch (err) { $("setMsg").className = "msg err"; $("setMsg").textContent = err.message; }
@@ -450,6 +442,13 @@ function showSettings() {
     await call("DELETE", "/api/me"); location.reload();
   };
 }
+
+CodfishTheme.mount($("lookPick"));
+document.addEventListener("codfish-theme", e => {
+  if (!me) return;
+  me.settings.theme = e.detail;
+  call("PUT", "/api/settings", me.settings).catch(() => {});
+});
 
 boot().catch(err => { $("main").textContent = err.message; });
 </script>

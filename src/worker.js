@@ -1,6 +1,8 @@
 // Codfish: the demo board, the workspace, and its API.
 import DEMO_HTML from "../public/index.html";
 import APP_HTML from "../public/app.html";
+import THEMES_CSS from "../public/themes.css";
+import THEMES_JS from "../public/themes.js.txt";
 import { parseLean } from "./lean.js";
 import { PROVIDERS, HOUSE_MODEL, MAX_CALL_MICRO, houseCharge, parseModelTree, runHouse, runOwn } from "./llm.js";
 
@@ -10,6 +12,7 @@ const CODE_TTL_MS = 10 * 60_000;
 const MAX_SOURCE = 100_000;
 const MAX_PROOFS = 200;
 const COOKIE = "codfish_session";
+const THEMES = ["auto", "heartwood-light", "heartwood-night", "proofruns", "paper", "chalk", "aquarium", "infoview"];
 
 // ---------- small helpers ----------
 
@@ -66,7 +69,7 @@ const HTML_HEADERS = {
   "cache-control": "no-cache",
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
-  "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 
 const isAdmin = (env, email) => (env.ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).includes(email);
@@ -179,7 +182,7 @@ async function authLogout(request, env) {
 function settingsOf(user) {
   let s = {};
   try { s = JSON.parse(user.settings || "{}"); } catch {}
-  return { provider: s.provider || "house", models: s.models || {}, baseUrl: s.baseUrl || "" };
+  return { provider: s.provider || "house", models: s.models || {}, baseUrl: s.baseUrl || "", theme: THEMES.includes(s.theme) ? s.theme : "auto" };
 }
 
 async function me(user, env) {
@@ -204,7 +207,8 @@ async function putSettings(request, user, env) {
   for (const k of Object.keys(PROVIDERS)) if (typeof b.models?.[k] === "string" && b.models[k].trim()) models[k] = b.models[k].trim().slice(0, 100);
   const baseUrl = typeof b.baseUrl === "string" ? b.baseUrl.trim().slice(0, 200) : "";
   if (baseUrl && !/^https:\/\/[^\s]+$/.test(baseUrl)) throw new HttpError(400, "The base URL must start with https://");
-  await env.DB.prepare("UPDATE users SET settings = ? WHERE id = ?").bind(JSON.stringify({ provider, models, baseUrl }), user.id).run();
+  const theme = THEMES.includes(b.theme) ? b.theme : "auto";
+  await env.DB.prepare("UPDATE users SET settings = ? WHERE id = ?").bind(JSON.stringify({ provider, models, baseUrl, theme }), user.id).run();
   return json({ ok: true });
 }
 
@@ -393,6 +397,8 @@ export default {
       if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
       if (url.pathname === "/" || url.pathname === "/index.html") return new Response(DEMO_HTML, { headers: HTML_HEADERS });
       if (url.pathname === "/app" || url.pathname === "/app/") return new Response(APP_HTML, { headers: HTML_HEADERS });
+      if (url.pathname === "/themes.css") return new Response(THEMES_CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
+      if (url.pathname === "/themes.js") return new Response(THEMES_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       return new Response("Not found", { status: 404 });
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status);

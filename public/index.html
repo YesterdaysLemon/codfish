@@ -5,28 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Codfish</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+<link rel="stylesheet" href="/themes.css">
+<script src="/themes.js"></script>
 <style>
-  :root {
-    --bg: #f4f1ea; --panel: #fffdf8; --ink: #1d1c1a; --quiet: #6b675e; --line: #d9d3c5;
-    --green: #2f8f4e; --yellow: #c99a12; --red: #c2412d;
-    --green-bg: #e3f2e7; --yellow-bg: #fbf1d3; --red-bg: #f8e1dc;
-    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #151614; --panel: #1d1f1c; --ink: #ece8df; --quiet: #9a968c; --line: #33352f;
-      --green-bg: #1d3325; --yellow-bg: #3a3118; --red-bg: #3d211c;
-    }
-  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
   header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 18px 22px 8px; }
-  h1 { margin: 0; font: 700 28px/1 var(--mono); letter-spacing: -0.5px; }
+  h1 { margin: 0; font: 700 28px/1 var(--display); letter-spacing: -0.5px; }
   h1 .fish { display: inline-block; transition: transform .4s; }
   h1.swap .fish { transform: rotate(-20deg) scale(1.15); }
   .tag { color: var(--quiet); font-size: 14px; }
-  .open { margin-left: auto; font-size: 14px; color: var(--ink); }
+  .open { margin-left: auto; font-size: 14px; color: var(--ink); display: inline-flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .open a { color: var(--ink); }
   .controls { padding: 4px 22px 14px; display: flex; gap: 8px; flex-wrap: wrap; }
   .controls button { font: 13px var(--sans); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--panel); color: var(--ink); cursor: pointer; }
@@ -68,7 +58,7 @@
 <header>
   <h1 id="name"><span class="fish">🐟</span> <span id="nameText">Codfish</span></h1>
   <span class="tag" id="tag">an analysis board for proofs</span>
-  <a class="open" href="/app">Open your workspace →</a>
+  <span class="open"><span id="lookPick"></span> <a href="/app">Open your workspace →</a></span>
 </header>
 <div class="controls" id="demos" role="group" aria-label="Demo proofs"></div>
 <main>
@@ -79,10 +69,11 @@
 <footer>
   Demo board. The colours, notes and best moves are precomputed for these three proofs; the live engine (Lean checks,
   counterexample search) isn't wired up yet. To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
-  <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green.
+  <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green. Pick a look at the top right.
 </footer>
 
 <script>
+const GLYPH = { green: "✓", yellow: "?", red: "✗" };
 const COLORS = {
   green:  { fg: "var(--green)",  bg: "var(--green-bg)",  word: "verified" },
   yellow: { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "open" },
@@ -161,7 +152,7 @@ const DEMOS = [
         text: "Let N = p₁ ⋯ pₙ + 1.",
         lean: "N := (∏ p ∈ S, p) + 1",
         status: "green", note: "Definition." },
-      { id: 4, parent: 1, short: "N is prime ✗",
+      { id: 4, parent: 1, short: "N is prime",
         text: "N is not divisible by any pᵢ, so N is prime.",
         lean: "∀ S : Finset ℕ, (∀ p ∈ S, p.Prime) → ((∏ p ∈ S, p) + 1).Prime",
         status: "red", note: "Counterexample: 2·3·5·7·11·13 + 1 = 30031 = 59 × 509. N need not be prime; it only has a prime factor outside the list.",
@@ -232,7 +223,7 @@ function renderBoard() {
       aria-label="Step ${s.id}: ${s.short}, ${c.word}">
       <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9"
         fill="${c.bg}" stroke="${c.fg}"/>
-      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${s.short}</text></g>`;
+      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${GLYPH[s.status]} ${s.short}</text></g>`;
   };
   const edges = kids.map(k => {
     const a = pos[root.id], b = pos[k.id], my = (a.y + b.y) / 2;
@@ -255,7 +246,7 @@ function renderMoves() {
     const best = s.best && s.status !== "green" ? `<div class="best"><b>BEST MOVE</b><div>${esc(s.best.text)}</div>
         <div class="lean">${esc(s.best.lean)}</div><button data-fix="${s.id}">Play it</button></div>` : "";
     return `<div class="move ${selected === s.id ? "sel" : ""}" data-id="${s.id}" style="border-left-color:${c.fg}">
-      <div class="head"><span class="num">${s.id}.</span><span class="dot" style="background:${c.fg}"></span>
+      <div class="head"><span class="num">${s.id}.</span><span class="glyph" style="color:${c.fg}">${GLYPH[s.status]}</span>
         <span>${esc(s.text)}</span></div>
       <div class="detail"><div class="lean">${esc(s.lean)}</div><div class="note"><b>${c.word}.</b> ${esc(s.note)}</div>${best}</div>
     </div>`;
@@ -276,6 +267,7 @@ function play(id) {
 document.getElementById("demos").innerHTML = DEMOS.map(d => `<button data-id="${d.id}">${d.title}</button>`).join("");
 document.querySelectorAll("#demos button").forEach(b => b.onclick = () => load(DEMOS.find(d => d.id === b.dataset.id)));
 load(DEMOS[2]);
+CodfishTheme.mount(document.getElementById("lookPick"));
 </script>
 </body>
 </html>

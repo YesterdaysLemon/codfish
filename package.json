@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/worker.js --bundle --format=esm --loader:.html=text --outfile=dist/worker.js",
+    "build": "esbuild src/worker.js --bundle --format=esm --loader:.html=text --loader:.css=text --loader:.txt=text --outfile=dist/worker.js",
     "test": "npm run build && node --no-warnings test/api.test.js",
     "deploy": "wrangler deploy"
   },

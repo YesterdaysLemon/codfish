@@ -3,7 +3,7 @@ main = "src/worker.js"
 compatibility_date = "2026-11-01"
 
 # Serve the pages as text modules.
-rules = [{ type = "Text", globs = ["**/*.html"], fallthrough = false }]
+rules = [{ type = "Text", globs = ["**/*.html", "**/*.css", "**/*.txt"], fallthrough = false }]
 
 routes = [{ pattern = "codfish.alirezaafshan.com", custom_domain = true }]
 

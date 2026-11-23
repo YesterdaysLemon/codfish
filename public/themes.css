@@ -1,0 +1,87 @@
+/* Codfish looks. Colours match the Codfish design system's seven themes; the page picks one with
+   <html data-theme="...">, set by /themes.js before first paint. Status glyphs (✓ ? ✗ ·) stay the same in every look. */
+
+:root, [data-theme="heartwood-light"] {
+  --bg: #f5f2e9; --panel: #fffdf7; --ink: #1c2622; --quiet: #56645e; --line: #ddd6c6;
+  --green: #2a7040; --yellow: #8a5e06; --red: #9c3d12; --grey: #646f6a;
+  --green-bg: #e2f0e3; --yellow-bg: #f8ecc9; --red-bg: #f7e1d3; --grey-bg: #eeeadf;
+  --accent: #e3b75a; --on-accent: #1c2622;
+  --display: Chivo, system-ui, sans-serif; --body: Literata, Georgia, serif;
+  --sans: var(--body); --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+[data-theme="heartwood-night"] {
+  --bg: #0a1316; --panel: #10201f; --ink: #e4eee9; --quiet: #a9bdb7; --line: #26403c;
+  --green: #5fbf6a; --yellow: #f2d184; --red: #e07a3c; --grey: #8ea5a0;
+  --green-bg: #14301f; --yellow-bg: #2c2716; --red-bg: #2e1a10; --grey-bg: #16292a;
+  --accent: #f2d184; --on-accent: #0a1316;
+  --display: Chivo, system-ui, sans-serif; --body: Literata, Georgia, serif;
+  --sans: var(--body); --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+[data-theme="proofruns"] {
+  --bg: #0f1520; --panel: #151d2b; --ink: #e9edf3; --quiet: #aeb8c6; --line: #222c3b;
+  --green: #6ee7a0; --yellow: #ffc266; --red: #ff8a80; --grey: #8c97a8;
+  --green-bg: #12301f; --yellow-bg: #3a2a10; --red-bg: #3a1716; --grey-bg: #1b2638;
+  --accent: #f5c542; --on-accent: #10141b;
+  --display: Inter, system-ui, sans-serif; --body: Inter, system-ui, sans-serif;
+  --sans: var(--body); --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+[data-theme="paper"] {
+  --bg: #f1f3f6; --panel: #ffffff; --ink: #1f2328; --quiet: #4b525c; --line: #dcdfe4;
+  --green: #23773f; --yellow: #8a5d00; --red: #b3261e; --grey: #6b7280;
+  --green-bg: #d6f0dc; --yellow-bg: #fdefc4; --red-bg: #fbd9d3; --grey-bg: #eef0f3;
+  --accent: #1a56c2; --on-accent: #ffffff;
+  --display: Arimo, Arial, sans-serif; --body: "Source Serif 4", Georgia, serif;
+  --sans: var(--body); --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+[data-theme="chalk"] {
+  --bg: #24352e; --panel: #2c4038; --ink: #f2efe4; --quiet: #c9d3cd; --line: #4a5f56;
+  --green: #9fe0a0; --yellow: #f5dc7a; --red: #f4a093; --grey: #a8b3ad;
+  --green-bg: #2f4a3a; --yellow-bg: #4a4a2e; --red-bg: #4d3530; --grey-bg: #31463d;
+  --accent: #f2efe4; --on-accent: #24352e;
+  --display: Caveat, "Comic Sans MS", cursive; --body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --sans: var(--body); --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+[data-theme="aquarium"] {
+  --bg: #072a3a; --panel: #0f4458; --ink: #e8f6f8; --quiet: #b9d6dc; --line: #1d5a70;
+  --green: #4fd1a5; --yellow: #f2c66d; --red: #ff8f82; --grey: #8fb5c2;
+  --green-bg: #0f4a45; --yellow-bg: #3e3a24; --red-bg: #4a2427; --grey-bg: #134d62;
+  --accent: #f2c66d; --on-accent: #072a3a;
+  --display: Fredoka, system-ui, sans-serif; --body: Nunito, system-ui, sans-serif;
+  --sans: var(--body); --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+[data-theme="infoview"] {
+  --bg: #ffffff; --panel: #f6f8fa; --ink: #1f2328; --quiet: #57606a; --line: #d8dee4;
+  --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --grey: #636c76;
+  --green-bg: #dafbe1; --yellow-bg: #fff8c5; --red-bg: #ffebe9; --grey-bg: #eef1f4;
+  --accent: #0550ae; --on-accent: #ffffff;
+  --display: Inter, system-ui, sans-serif; --body: Inter, system-ui, sans-serif;
+  --sans: var(--body); --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+/* The look picker */
+.look { display: inline-flex; align-items: center; gap: 6px; font: 13px var(--mono); color: var(--quiet); }
+.look select { font: 13px var(--mono); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; }
+.glyph { font-family: var(--mono); font-weight: 600; }
+
+/* A few touches per look */
+[data-theme="chalk"] body { border: 14px solid #6e4a2c; min-height: 100vh; box-sizing: border-box; }
+[data-theme="chalk"] h1, [data-theme="chalk"] h2 { font-family: var(--display); font-weight: 700; letter-spacing: 0; }
+[data-theme="chalk"] h1 { font-size: 40px !important; }
+[data-theme="chalk"] .node text { font-family: var(--display); font-size: 17px; }
+[data-theme="chalk"] .panel { border-style: dashed; }
+[data-theme="aquarium"] .node rect { rx: 19px; }
+[data-theme="aquarium"] .btn, [data-theme="aquarium"] .controls button, [data-theme="aquarium"] .best button,
+[data-theme="aquarium"] .panel { border-radius: 22px; }
+[data-theme="aquarium"] h1 { font-weight: 700; }
+[data-theme="proofruns"] h1 { font-weight: 800; letter-spacing: -0.01em; }
+[data-theme="paper"] .panel { box-shadow: 0 1px 3px rgba(0, 0, 0, .12); border-color: transparent; }
+[data-theme="infoview"] .panel { border-radius: 6px; }
+[data-theme="infoview"] .move, [data-theme="infoview"] .node text { font-family: var(--mono); font-size: 13px; }

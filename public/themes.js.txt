@@ -1,0 +1,79 @@
+// Codfish looks: picks the theme before first paint, loads its fonts, and draws the picker.
+(function () {
+  var THEMES = [
+    ["auto", "Auto (Heartwood)"],
+    ["heartwood-light", "Heartwood Light"],
+    ["heartwood-night", "Heartwood Night"],
+    ["proofruns", "Proofruns"],
+    ["paper", "Paper"],
+    ["chalk", "Chalkboard"],
+    ["aquarium", "Aquarium"],
+    ["infoview", "Infoview"],
+  ];
+  var FONTS = {
+    heartwood: "family=Chivo:wght@700;900&family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500;600",
+    proofruns: "family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600",
+    paper: "family=Arimo:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600",
+    chalk: "family=Caveat:wght@600;700&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600",
+    aquarium: "family=Fredoka:wght@500;700&family=Nunito:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600",
+    infoview: "family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600",
+  };
+  var KEY = "codfish-theme";
+  var dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  var valid = function (t) { return THEMES.some(function (x) { return x[0] === t; }); };
+  var resolve = function (t) {
+    if (!t || t === "auto") return dark && dark.matches ? "heartwood-night" : "heartwood-light";
+    return t;
+  };
+  var loaded = {};
+  var loadFonts = function (theme) {
+    var group = theme.indexOf("heartwood") === 0 ? "heartwood" : theme;
+    if (loaded[group] || !FONTS[group]) return;
+    loaded[group] = true;
+    var l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?" + FONTS[group] + "&display=swap";
+    document.head.appendChild(l);
+  };
+  var choice = "auto";
+  try { var s = localStorage.getItem(KEY); if (valid(s)) choice = s; } catch (e) {}
+  var apply = function () {
+    var t = resolve(choice);
+    document.documentElement.setAttribute("data-theme", t);
+    loadFonts(t);
+  };
+  apply();
+  if (dark && dark.addEventListener) dark.addEventListener("change", function () { if (choice === "auto") apply(); });
+
+  var selects = [];
+  window.CodfishTheme = {
+    themes: THEMES,
+    get: function () { return choice; },
+    set: function (t, opts) {
+      if (!valid(t)) return;
+      choice = t;
+      apply();
+      try { localStorage.setItem(KEY, t); } catch (e) {}
+      selects.forEach(function (s) { s.value = t; });
+      if (!(opts && opts.quiet)) document.dispatchEvent(new CustomEvent("codfish-theme", { detail: t }));
+    },
+    mount: function (el) {
+      if (!el) return;
+      var label = document.createElement("label");
+      label.className = "look";
+      label.textContent = "Look ";
+      var sel = document.createElement("select");
+      sel.setAttribute("aria-label", "Look");
+      THEMES.forEach(function (x) {
+        var o = document.createElement("option");
+        o.value = x[0]; o.textContent = x[1];
+        sel.appendChild(o);
+      });
+      sel.value = choice;
+      sel.addEventListener("change", function () { window.CodfishTheme.set(sel.value); });
+      label.appendChild(sel);
+      el.appendChild(label);
+      selects.push(sel);
+    },
+  };
+})();
