@@ -1,0 +1,8 @@
+name = "codfish"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# Serve the board's HTML as a text module.
+rules = [{ type = "Text", globs = ["**/*.html"], fallthrough = false }]
+
+routes = [{ pattern = "codfish.alirezaafshan.com", custom_domain = true }]

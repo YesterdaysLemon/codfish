@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codfish</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #1d1c1a; --quiet: #6b675e; --line: #d9d3c5;
+    --green: #2f8f4e; --yellow: #c99a12; --red: #c2412d;
+    --green-bg: #e3f2e7; --yellow-bg: #fbf1d3; --red-bg: #f8e1dc;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151614; --panel: #1d1f1c; --ink: #ece8df; --quiet: #9a968c; --line: #33352f;
+      --green-bg: #1d3325; --yellow-bg: #3a3118; --red-bg: #3d211c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 18px 22px 8px; }
+  h1 { margin: 0; font: 700 28px/1 var(--mono); letter-spacing: -0.5px; }
+  h1 .fish { display: inline-block; transition: transform .4s; }
+  h1.swap .fish { transform: rotate(-20deg) scale(1.15); }
+  .tag { color: var(--quiet); font-size: 14px; }
+  .controls { padding: 4px 22px 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls button { font: 13px var(--sans); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; }
+  .controls button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  main { display: grid; grid-template-columns: 56px minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; padding: 0 22px 22px; }
+  @media (max-width: 860px) { main { grid-template-columns: 44px minmax(0, 1fr); } #moves { grid-column: 1 / -1; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  #bar { position: relative; overflow: hidden; display: flex; flex-direction: column-reverse; min-height: 320px; }
+  #bar div { transition: height .5s; }
+  #bar .label { position: absolute; inset: auto 0 6px 0; text-align: center; font: 700 12px var(--mono); color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  #board { padding: 8px; min-height: 320px; }
+  #board svg { width: 100%; height: auto; display: block; }
+  .node { cursor: pointer; }
+  .node rect { stroke-width: 2; }
+  .node.sel rect { stroke-width: 3.5; }
+  .node text { font: 12.5px var(--sans); fill: var(--ink); pointer-events: none; }
+  #moves { padding: 6px 0; }
+  .move { padding: 10px 16px; border-left: 4px solid transparent; cursor: pointer; }
+  .move + .move { border-top: 1px solid var(--line); }
+  .move.sel { background: var(--bg); }
+  .move .head { display: flex; gap: 8px; align-items: baseline; }
+  .move .num { font: 700 12px var(--mono); color: var(--quiet); min-width: 22px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; transform: translateY(1px); }
+  .detail { display: none; margin: 8px 0 2px 30px; font-size: 13.5px; }
+  .move.sel .detail { display: block; }
+  .lean { font: 12px/1.45 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
+  .note { color: var(--quiet); }
+  .best { margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--line); }
+  .best b { font-family: var(--mono); font-size: 12px; letter-spacing: .5px; }
+  .best button { margin-top: 6px; font: 600 13px var(--sans); padding: 5px 12px; border-radius: 8px; border: 0;
+    background: var(--green); color: #fff; cursor: pointer; }
+  footer { padding: 0 22px 28px; color: var(--quiet); font-size: 13px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="name"><span class="fish">🐟</span> <span id="nameText">Codfish</span></h1>
+  <span class="tag" id="tag">an analysis board for proofs</span>
+</header>
+<div class="controls" id="demos" role="group" aria-label="Demo proofs"></div>
+<main>
+  <div class="panel" id="bar" aria-label="Eval bar"></div>
+  <div class="panel" id="board"></div>
+  <div class="panel" id="moves"></div>
+</main>
+<footer>
+  Demo board. The colours, notes and best moves are precomputed for these three proofs; the live engine (Lean checks,
+  counterexample search) isn't wired up yet. Lean statements are illustrative. The name follows the board:
+  <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green.
+</footer>
+
+<script>
+const COLORS = {
+  green:  { fg: "var(--green)",  bg: "var(--green-bg)",  word: "verified" },
+  yellow: { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "open" },
+  red:    { fg: "var(--red)",    bg: "var(--red-bg)",    word: "broken" },
+};
+
+const DEMOS = [
+  {
+    id: "sqrt2", title: "√2 is irrational",
+    steps: [
+      { id: 1, parent: null, short: "√2 is irrational",
+        text: "√2 is irrational.",
+        lean: "theorem sqrt_two_irrational : Irrational (Real.sqrt 2)",
+        status: "green", note: "Follows from steps 2–5." },
+      { id: 2, parent: 1, short: "p² = 2q²",
+        text: "Suppose √2 = p/q in lowest terms. Squaring, p² = 2q².",
+        lean: "∀ p q : ℕ, q ≠ 0 → (p : ℝ) / q = Real.sqrt 2 → p ^ 2 = 2 * q ^ 2",
+        status: "green", note: "Closed by field_simp and the defining property of the square root." },
+      { id: 3, parent: 1, short: "p is even",
+        text: "p² is even, so p is even.",
+        lean: "∀ p : ℕ, Even (p ^ 2) → Even p",
+        status: "green", note: "Closed by a parity lemma already in Mathlib." },
+      { id: 4, parent: 1, short: "q is even",
+        text: "Write p = 2k. Then 4k² = 2q², so q² = 2k² and q is even.",
+        lean: "∀ k q : ℕ, (2 * k) ^ 2 = 2 * q ^ 2 → Even q",
+        status: "green", note: "Closed by ring_nf and step 3 applied to q." },
+      { id: 5, parent: 1, short: "not lowest terms",
+        text: "Both p and q are even, contradicting lowest terms.",
+        lean: "∀ p q : ℕ, Even p → Even q → ¬ Nat.Coprime p q",
+        status: "green", note: "2 divides the gcd, so the gcd isn't 1." },
+    ],
+  },
+  {
+    id: "euclid-sketch", title: "Infinitely many primes (sketch)",
+    steps: [
+      { id: 1, parent: null, short: "infinitely many primes",
+        text: "There are infinitely many primes.",
+        lean: "theorem infinitely_many_primes : ∀ n : ℕ, ∃ p, n ≤ p ∧ p.Prime",
+        status: "green", note: "Holds once its children are settled; currently waiting on 4 and 5." },
+      { id: 2, parent: 1, short: "finite list",
+        text: "Suppose the primes are a finite list p₁, …, pₙ.",
+        lean: "(S : Finset ℕ) (hS : ∀ p, p.Prime ↔ p ∈ S)",
+        status: "green", note: "Setup: a hypothesis, nothing to prove." },
+      { id: 3, parent: 1, short: "N = ∏ + 1",
+        text: "Let N = p₁ ⋯ pₙ + 1.",
+        lean: "N := (∏ p ∈ S, p) + 1",
+        status: "green", note: "Definition." },
+      { id: 4, parent: 1, short: "N has a prime factor",
+        text: "Clearly N has a prime factor p.",
+        lean: "∃ p, p.Prime ∧ p ∣ N",
+        status: "yellow", note: "\"Clearly\" skips a step: this needs N ≠ 1. No counterexample, but no proof at this think time.",
+        best: { text: "Add the missing step: the product is at least 1, so N ≥ 2. Then Mathlib's Nat.exists_prime_and_dvd gives the prime factor.",
+                lean: "have hpos : 0 < ∏ p ∈ S, p := Finset.prod_pos (fun p hp => ((hS p).2 hp).pos)\nhave hN : N ≠ 1 := by omega\nexact Nat.exists_prime_and_dvd hN",
+                note: "Verified after adding N ≥ 2." } },
+      { id: 5, parent: 1, short: "p isn't in the list",
+        text: "p is not in the list: it would divide both N and the product, so it would divide 1.",
+        lean: "∀ p a : ℕ, p.Prime → p ∣ a → p ∣ a + 1 → False",
+        status: "yellow", note: "True up to a = 10,000 (no counterexample), but the prover ran out of think time.",
+        best: { text: "Prove p ∣ 1 first (Nat.dvd_add_right), then a prime can't divide 1 (Nat.Prime.one_lt).",
+                lean: "have h1 : p ∣ 1 := (Nat.dvd_add_right hpa).mp hpa1\nexact hp.ne_one (Nat.dvd_one.mp h1)",
+                note: "Verified with the intermediate lemma." } },
+    ],
+  },
+  {
+    id: "euclid-slip", title: "Infinitely many primes (the classic slip)",
+    steps: [
+      { id: 1, parent: null, short: "infinitely many primes",
+        text: "There are infinitely many primes.",
+        lean: "theorem infinitely_many_primes : ∀ n : ℕ, ∃ p, n ≤ p ∧ p.Prime",
+        status: "green", note: "Holds if its children do. Step 4 doesn't." },
+      { id: 2, parent: 1, short: "finite list",
+        text: "Suppose the primes are a finite list p₁, …, pₙ.",
+        lean: "(S : Finset ℕ) (hS : ∀ p, p.Prime ↔ p ∈ S)",
+        status: "green", note: "Setup." },
+      { id: 3, parent: 1, short: "N = ∏ + 1",
+        text: "Let N = p₁ ⋯ pₙ + 1.",
+        lean: "N := (∏ p ∈ S, p) + 1",
+        status: "green", note: "Definition." },
+      { id: 4, parent: 1, short: "N is prime ✗",
+        text: "N is not divisible by any pᵢ, so N is prime.",
+        lean: "∀ S : Finset ℕ, (∀ p ∈ S, p.Prime) → ((∏ p ∈ S, p) + 1).Prime",
+        status: "red", note: "Counterexample: 2·3·5·7·11·13 + 1 = 30031 = 59 × 509. N need not be prime; it only has a prime factor outside the list.",
+        best: { text: "Replace with the weaker claim that is actually true: N has a prime factor, and that factor isn't in the list.",
+                lean: "obtain ⟨p, hp, hpN⟩ := Nat.exists_prime_and_dvd hN\n-- p ∉ S, since p ∣ ∏ S and p ∣ N would give p ∣ 1",
+                newShort: "prime factor ∉ list",
+                note: "Verified. The rest of the proof goes through unchanged." } },
+      { id: 5, parent: 1, short: "contradiction",
+        text: "So there is a prime outside the list, a contradiction.",
+        lean: "False",
+        status: "green", note: "Follows from step 4 and step 2." },
+    ],
+  },
+];
+
+let demo, steps, selected = null;
+
+function nameFor(st) {
+  const s = st.map(x => x.status);
+  if (s.every(c => c === "green")) return "Lemmafish";
+  if (!s.includes("red") && s.includes("yellow")) return "Proofish";
+  return "Codfish";
+}
+const TAGS = { Codfish: "an analysis board for proofs", Proofish: "proof-ish: plausible, not settled",
+               Lemmafish: "proved. it's a lemma now." };
+
+function load(d) {
+  demo = d; steps = structuredClone(d.steps); selected = null;
+  document.querySelectorAll("#demos button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === d.id));
+  render();
+}
+
+function settleRoot() {
+  const root = steps.find(s => s.parent === null), kids = steps.filter(s => s.parent === root.id).map(s => s.status);
+  root.status = kids.includes("red") ? "red" : kids.includes("yellow") ? "yellow" : "green";
+  root.note = root.status === "green" ? "Every step verified." :
+    root.status === "red" ? "Doesn't follow yet: a step below is broken." : "Waiting on the yellow steps below.";
+}
+
+function render() {
+  settleRoot();
+  const n = nameFor(steps), el = document.getElementById("nameText");
+  if (el.textContent !== n) {
+    const h = document.getElementById("name"); h.classList.add("swap"); setTimeout(() => h.classList.remove("swap"), 400);
+    el.textContent = n; document.title = n;
+  }
+  document.getElementById("tag").textContent = TAGS[n];
+  renderBar(); renderBoard(); renderMoves();
+}
+
+function renderBar() {
+  const bar = document.getElementById("bar"), total = steps.length;
+  const count = c => steps.filter(s => s.status === c).length;
+  bar.innerHTML = ["green", "yellow", "red"].map(c =>
+    `<div style="height:${100 * count(c) / total}%;background:${COLORS[c].fg}"></div>`).join("") +
+    `<span class="label">${count("green")}/${total}</span>`;
+}
+
+function renderBoard() {
+  const W = 680, nodeW = 152, nodeH = 40, rootY = 34, childY = 170;
+  const root = steps.find(s => s.parent === null), kids = steps.filter(s => s.parent === root.id);
+  const gap = W / kids.length, pos = {};
+  pos[root.id] = { x: W / 2, y: rootY };
+  kids.forEach((k, i) => pos[k.id] = { x: gap * (i + 0.5), y: childY });
+  const box = s => {
+    const p = pos[s.id], c = COLORS[s.status];
+    return `<g class="node ${selected === s.id ? "sel" : ""}" data-id="${s.id}" tabindex="0" role="button"
+      aria-label="Step ${s.id}: ${s.short}, ${c.word}">
+      <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9"
+        fill="${c.bg}" stroke="${c.fg}"/>
+      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${s.short}</text></g>`;
+  };
+  const edges = kids.map(k => {
+    const a = pos[root.id], b = pos[k.id], my = (a.y + b.y) / 2;
+    return `<path d="M${a.x} ${a.y + nodeH / 2} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y - nodeH / 2}"
+      fill="none" stroke="${COLORS[k.status].fg}" stroke-width="${k.status === "green" ? 5 : 2.5}"
+      stroke-linecap="round" opacity=".55"/>`;
+  }).join("");
+  document.getElementById("board").innerHTML =
+    `<svg viewBox="0 -6 ${W} 240" role="img" aria-label="Proof tree for ${demo.title}">${edges}${steps.map(box).join("")}</svg>`;
+  document.querySelectorAll(".node").forEach(g => {
+    const pick = () => select(+g.dataset.id);
+    g.onclick = pick; g.onkeydown = e => (e.key === "Enter" || e.key === " ") && pick();
+  });
+}
+
+function renderMoves() {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  document.getElementById("moves").innerHTML = steps.map(s => {
+    const c = COLORS[s.status];
+    const best = s.best && s.status !== "green" ? `<div class="best"><b>BEST MOVE</b><div>${esc(s.best.text)}</div>
+        <div class="lean">${esc(s.best.lean)}</div><button data-fix="${s.id}">Play it</button></div>` : "";
+    return `<div class="move ${selected === s.id ? "sel" : ""}" data-id="${s.id}" style="border-left-color:${c.fg}">
+      <div class="head"><span class="num">${s.id}.</span><span class="dot" style="background:${c.fg}"></span>
+        <span>${esc(s.text)}</span></div>
+      <div class="detail"><div class="lean">${esc(s.lean)}</div><div class="note"><b>${c.word}.</b> ${esc(s.note)}</div>${best}</div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll(".move").forEach(m => m.onclick = e => { if (!e.target.dataset.fix) select(+m.dataset.id); });
+  document.querySelectorAll("[data-fix]").forEach(b => b.onclick = () => play(+b.dataset.fix));
+}
+
+function select(id) { selected = selected === id ? null : id; renderBoard(); renderMoves(); }
+
+function play(id) {
+  const s = steps.find(x => x.id === id);
+  s.status = "green"; s.note = s.best.note; s.lean = s.best.lean;
+  if (s.best.newShort) { s.short = s.best.newShort; s.text = s.best.text; }
+  render();
+}
+
+document.getElementById("demos").innerHTML = DEMOS.map(d => `<button data-id="${d.id}">${d.title}</button>`).join("");
+document.querySelectorAll("#demos button").forEach(b => b.onclick = () => load(DEMOS.find(d => d.id === b.dataset.id)));
+load(DEMOS[2]);
+</script>
+</body>
+</html>
