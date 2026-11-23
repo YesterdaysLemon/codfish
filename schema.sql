@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS proofs (
   source      TEXT NOT NULL,
   analysis    TEXT,
   variant     TEXT NOT NULL DEFAULT 'standard',
+  blocks      TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

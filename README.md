@@ -26,7 +26,9 @@ Live at **[codfish.alirezaafshan.com](https://codfish.alirezaafshan.com)**:
 
 - **Demo board** (`/`): proofs with precomputed colours, notes and best moves, including **1 + 1 = 3** under three rule sets (Standard, Sheep, Trivial ring).
 - **Lemma of the Day** (`/daily`): one puzzle a day, the same for everyone. Find the blunder or fill the gap, in three tries. Share card, streak, results saved to your account if you're signed in. Puzzles are hand-checked until the engine runs, so the page never shows green.
-- **Blocks** (`/blocks`): build a proof from Scratch-style pieces (induction with base and step arms, suppose not, cases, let, pick, so, rewrite, done, define) and watch the Lean write itself. "Obvious" becomes `sorry` and shows as `?`. Send the result to your workspace.
+- **Three ways to start a proof** in the workspace: drop in a **Lean file**, write a **sketch** for a model to formalize, or **build it with blocks** (Scratch-style pieces: induction with base and step arms, suppose not, cases, both directions, assume, contrapositive, let, pick, use, so, rewrite, done, define) and watch the Lean write itself. "Obvious" becomes `sorry` and shows as `?`. `/blocks` is a try-it-out version that needs no account.
+- **The playbook:** a classic proof for each move from an intro-to-proofs course (direct, contrapositive, contradiction, induction, cases, construction, both directions, counterexample, pigeonhole). Each one can start a proof as blocks, Lean or a sketch, and the demo board draws them.
+- **Proof Bonsai tree:** zoom out and whole subproofs fold into limbs (thicker the more they hold, with a strip showing heartwood, greenwood, scar and bud); tap a limb to open it. Lean files are grouped by namespace, then by theorem, then by the proof's own structure (induction cases, `by_cases` arms, `have`, `obtain`).
 - **Variants:** every proof has rules: Standard, Sheep (x ⊕ y = x + y + 1), Trivial ring, Constructive. The model judges sketches under the chosen rules.
 - **Workspace** (`/app`): sign in with an emailed code, then drop in your own proofs:
   - **A Lean file.** Each theorem, lemma and `have` becomes a node in the tree. `sorry` shows as yellow; everything else is grey (unchecked) until the engine can run Lean.
@@ -55,7 +57,10 @@ Milestone test: 30 short proofs (10 correct, 10 with a planted error, 10 with a 
 public/index.html   demo board
 public/app.html     workspace (sign-in, proofs, board, settings)
 public/daily.html   Lemma of the Day and its puzzle bank
-public/blocks.html  Blocks editor, writes Lean live
+public/blocks.html  Blocks, the try-it-out version
+public/blocks.js.txt    the Blocks editor and Lean writer (served as /blocks.js)
+public/bonsai.js.txt    the zoomable proof tree (served as /bonsai.js)
+public/playbook.js.txt  the playbook of classic proofs (served as /playbook.js)
 src/worker.js       Cloudflare Worker: pages and the API
 src/lean.js         Lean file -> proof tree (no Lean run yet)
 src/llm.js          sketch -> proof tree via a model; providers and house-model pricing

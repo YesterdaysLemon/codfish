@@ -7,6 +7,9 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
 <link rel="stylesheet" href="/themes.css">
 <script src="/themes.js"></script>
+<script src="/bonsai.js"></script>
+<script src="/blocks.js"></script>
+<script src="/playbook.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
@@ -53,6 +56,12 @@
   .hidden { display: none !important; }
   .controls .lbl { font: 600 12px var(--mono); color: var(--quiet); text-transform: uppercase; letter-spacing: .06em; align-self: center; }
   .rulesnote { font-size: 13.5px; color: var(--quiet); align-self: center; }
+  #pbPick { font: 13px var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); max-width: 100%; }
+  #pbPick.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .pbacts { margin: 10px 16px 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 13.5px; }
+  .pbacts a { font: 600 13px var(--sans); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; }
+  .pbsketch { margin: 8px 16px 0; color: var(--quiet); font-size: 14px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--quiet); padding: 0 22px 12px; }
   footer { padding: 0 22px 28px; color: var(--quiet); font-size: 13px; }
   footer a { color: inherit; }
 </style>
@@ -64,24 +73,27 @@
   <span class="open"><span id="lookPick"></span> <a href="/daily">Lemma of the Day</a> <a href="/blocks">Blocks</a> <a href="/app">Open your workspace →</a></span>
 </header>
 <div class="controls" id="demos" role="group" aria-label="Demo proofs"></div>
+<div class="controls" id="pbRow"><span class="lbl">Playbook</span><select id="pbPick" aria-label="Playbook proof"></select></div>
 <div class="controls hidden" id="rules" role="group" aria-label="Rules"></div>
 <main>
   <div class="panel" id="bar" aria-label="Eval bar"></div>
   <div class="panel" id="board"></div>
   <div class="panel" id="moves"></div>
 </main>
+<div class="legend" id="legend"></div>
 <footer>
   Demo board. The colours, notes and best moves are precomputed for these demo proofs; the live engine (Lean checks,
-  counterexample search) isn't wired up yet. The 1 + 1 = 3 board shows variants: the same claim under different rules. To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
+  counterexample search) isn't wired up yet. The 1 + 1 = 3 board shows variants: the same claim under different rules. Playbook proofs are drawn straight from their blocks; Lean hasn't checked them yet, so they stay buds (·). To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
   <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green. Pick a look at the top right.
 </footer>
 
 <script>
-const GLYPH = { green: "✓", yellow: "?", red: "✗" };
+const GLYPH = { green: "✓", yellow: "?", red: "✗", unchecked: "·" };
 const COLORS = {
-  green:  { fg: "var(--green)",  bg: "var(--green-bg)",  word: "verified" },
-  yellow: { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "open" },
-  red:    { fg: "var(--red)",    bg: "var(--red-bg)",    word: "broken" },
+  green:  { fg: "var(--green)",  bg: "var(--green-bg)",  word: "heartwood · verified" },
+  yellow: { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "greenwood · open" },
+  red:    { fg: "var(--red)",    bg: "var(--red-bg)",    word: "scar · broken" },
+  unchecked: { fg: "var(--grey)", bg: "var(--grey-bg)", word: "bud · unchecked" },
 };
 
 const DEMOS = [
@@ -219,10 +231,14 @@ function load(d, r) {
     rule = null; steps = structuredClone(d.steps); rb.classList.add("hidden");
   }
   document.querySelectorAll("#demos button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === d.id));
+  document.getElementById("pbPick").classList.toggle("on", !!d.playbook);
+  if (!d.playbook) document.getElementById("pbPick").value = "";
   render();
 }
 
 function settleRoot() {
+  if (demo.playbook) return; // playbook trees come straight from their blocks: nothing is precomputed green
+
   const root = steps.find(s => s.parent === null), kids = steps.filter(s => s.parent === root.id).map(s => s.status);
   root.status = kids.includes("red") ? "red" : kids.includes("yellow") ? "yellow" : "green";
   root.note = root.status === "green" ? "Every step verified." :
@@ -243,37 +259,17 @@ function render() {
 function renderBar() {
   const bar = document.getElementById("bar"), total = steps.length;
   const count = c => steps.filter(s => s.status === c).length;
-  bar.innerHTML = ["green", "yellow", "red"].map(c =>
+  bar.innerHTML = ["green", "yellow", "red", "unchecked"].map(c =>
     `<div style="height:${100 * count(c) / total}%;background:${COLORS[c].fg}"></div>`).join("") +
     `<span class="label">${count("green")}/${total}</span>`;
 }
 
 function renderBoard() {
-  const W = 680, nodeW = 152, nodeH = 40, rootY = 34, childY = 170;
-  const root = steps.find(s => s.parent === null), kids = steps.filter(s => s.parent === root.id);
-  const gap = W / kids.length, pos = {};
-  pos[root.id] = { x: W / 2, y: rootY };
-  kids.forEach((k, i) => pos[k.id] = { x: gap * (i + 0.5), y: childY });
-  const box = s => {
-    const p = pos[s.id], c = COLORS[s.status];
-    return `<g class="node ${selected === s.id ? "sel" : ""}" data-id="${s.id}" tabindex="0" role="button"
-      aria-label="Step ${s.id}: ${s.short}, ${c.word}">
-      <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9"
-        fill="${c.bg}" stroke="${c.fg}"/>
-      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${GLYPH[s.status]} ${s.short}</text></g>`;
-  };
-  const edges = kids.map(k => {
-    const a = pos[root.id], b = pos[k.id], my = (a.y + b.y) / 2;
-    return `<path d="M${a.x} ${a.y + nodeH / 2} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y - nodeH / 2}"
-      fill="none" stroke="${COLORS[k.status].fg}" stroke-width="${k.status === "green" ? 5 : 2.5}"
-      stroke-linecap="round" opacity=".55"/>`;
-  }).join("");
-  document.getElementById("board").innerHTML =
-    `<svg viewBox="0 -6 ${W} 240" role="img" aria-label="Proof tree for ${demo.title}">${edges}${steps.map(box).join("")}</svg>`;
-  document.querySelectorAll(".node").forEach(g => {
-    const pick = () => select(+g.dataset.id);
-    g.onclick = pick; g.onkeydown = e => (e.key === "Enter" || e.key === " ") && pick();
-  });
+  CodfishBonsai.draw(document.getElementById("board"), steps, { selected, onSelect: id => select(id, true) });
+  const pb = demo.playbook;
+  if (pb) document.getElementById("board").insertAdjacentHTML("beforeend",
+    `<p class="pbsketch"><b>${pb.technique}.</b> ${pb.sketch.replace(/</g, "&lt;")}</p>
+     <div class="pbacts">Work on it: <a href="/app#new/blocks/${pb.id}">as blocks</a><a href="/app#new/lean/${pb.id}">as Lean</a><a href="/app#new/sketch/${pb.id}">as a sketch</a><a href="/blocks#${pb.id}">try Blocks without an account</a></div>`);
 }
 
 function renderMoves() {
@@ -292,7 +288,7 @@ function renderMoves() {
   document.querySelectorAll("[data-fix]").forEach(b => b.onclick = () => play(+b.dataset.fix));
 }
 
-function select(id) { selected = selected === id ? null : id; renderBoard(); renderMoves(); }
+function select(id, fromTree) { selected = selected === id && !fromTree ? null : id; renderBoard(); renderMoves(); }
 
 function play(id) {
   const s = steps.find(x => x.id === id);
@@ -303,6 +299,16 @@ function play(id) {
 
 document.getElementById("demos").innerHTML = DEMOS.map(d => `<button data-id="${d.id}">${d.title}</button>`).join("");
 document.querySelectorAll("#demos button").forEach(b => b.onclick = () => load(DEMOS.find(d => d.id === b.dataset.id)));
+// The playbook: classic proofs drawn from their blocks. Lean hasn't checked them, so they're buds, not heartwood.
+const PB = window.CodfishPlaybook;
+const pbPick = document.getElementById("pbPick");
+pbPick.innerHTML = `<option value="">Pick a classic proof…</option>` + [...new Set(PB.map(e => e.technique))].map(t =>
+  `<optgroup label="${t}">${PB.filter(e => e.technique === t).map(e => `<option value="${e.id}">${e.title}</option>`).join("")}</optgroup>`).join("");
+pbPick.onchange = () => {
+  const e = PB.find(x => x.id === pbPick.value); if (!e) return;
+  load({ id: "pb-" + e.id, title: e.title, playbook: e, steps: CodfishBlocks.toSteps(e.blocks, e.rules) });
+};
+document.getElementById("legend").innerHTML = CodfishBonsai.legend();
 load(DEMOS[2]);
 CodfishTheme.mount(document.getElementById("lookPick"));
 </script>

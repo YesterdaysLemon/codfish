@@ -1,0 +1,382 @@
+// Codfish Blocks: Scratch-style proof pieces that write Lean.
+// Shared by the workspace (/app) and the guest playground (/blocks).
+//   CodfishBlocks.mount(root, { state, rules, onChange }) -> { get, set }
+//   CodfishBlocks.compile(state, rules) -> { lean, open, marks, leanOf }
+//   CodfishBlocks.toSteps(state, rules) -> proof-tree steps (never green: Lean hasn't run)
+(function () {
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const RULES = {
+    standard: { label: "Standard", note: "Ordinary mathematics." },
+    sheep: { label: "Sheep", note: "Addition is breeding: x ⊕ y = x + y + 1, written breed x y in Lean. So breed 1 1 = 3, and the reasons unfold breed for you.",
+      preamble: "def breed (x y : ℤ) : ℤ := x + y + 1" },
+    trivial: { label: "Trivial ring", note: "Work in a ring where 0 = 1, so every equation holds.", preamble: "variable {R : Type} [CommRing R] [Subsingleton R]" },
+    constructive: { label: "Constructive", note: "No excluded middle. Suppose not, Cases and Contrapositive need it, so they're marked ? unless you're proving a negation." },
+  };
+
+  const REASONS = {
+    ring: "it's algebra (ring)",
+    simp: "simplify (simp)",
+    norm_num: "compute (norm_num)",
+    omega: "whole-number facts (omega)",
+    linarith: "add up inequalities (linarith)",
+    assumption: "it's a hypothesis",
+    decide: "check every case (decide)",
+    custom: "my own Lean…",
+    obvious: "obvious (leaves a gap)",
+  };
+  function tactic(b, rules) {
+    const r = b.r;
+    if (r === "obvious") return "sorry";
+    if (r === "custom") return (b.tac || "").trim() || "sorry";
+    if (rules === "sheep") {
+      if (r === "ring") return "simp only [breed]; ring";
+      if (r === "simp" || r === "norm_num") return `${r} [breed]`;
+    }
+    return r;
+  }
+  const gapReason = b => b.r === "obvious" || (b.r === "custom" && !(b.tac || "").trim());
+
+  const PIECES = {
+    induction: { cat: "structure", label: "By induction", make: () => ({ t: "induction", v: "n", base: [], step: [] }) },
+    contra:    { cat: "structure", label: "Suppose not", make: () => ({ t: "contra", arm: [] }) },
+    cases:     { cat: "structure", label: "Cases", make: () => ({ t: "cases", cond: "", yes: [], no: [] }) },
+    split:     { cat: "structure", label: "Both directions", make: () => ({ t: "split", fwd: [], back: [] }) },
+    assume:    { cat: "fact", label: "Assume", make: () => ({ t: "assume", h: "h", p: "" }) },
+    contrapose:{ cat: "fact", label: "Contrapositive", make: () => ({ t: "contrapose" }) },
+    let:       { cat: "fact", label: "Let", make: () => ({ t: "let", x: "", e: "" }) },
+    pick:      { cat: "fact", label: "Pick", make: () => ({ t: "pick", x: "", p: "", r: "assumption" }) },
+    use:       { cat: "fact", label: "Use", make: () => ({ t: "use", w: "" }) },
+    so:        { cat: "fact", label: "So", make: () => ({ t: "so", c: "", r: "obvious" }) },
+    rw:        { cat: "fact", label: "Rewrite with", make: () => ({ t: "rw", with: "" }) },
+    done:      { cat: "fact", label: "Done", make: () => ({ t: "done", r: "obvious" }) },
+    define:    { cat: "rule", label: "Define", make: () => ({ t: "define", sig: "", e: "" }) },
+  };
+  const ARMS = { induction: ["base", "step"], contra: ["arm"], cases: ["yes", "no"], split: ["fwd", "back"] };
+  const ARM_LABEL = { base: "Base case", step: "Step", arm: "Reach a contradiction", yes: "If it holds", no: "If it doesn't", fwd: "One way (→)", back: "The other way (←)" };
+
+  const blank = () => ({ title: "my_lemma", binders: "", goal: "", defs: [], body: [] });
+
+  // ---------- Lean ----------
+  // An arm is finished once some piece in it ends the proof (Done, or a structure piece whose arms finish it).
+  // Pieces after that point are flagged on their own.
+  const closesList = list => list.some(b => b.t === "done" || b.t in ARMS);
+
+  function compile(state, rules) {
+    let open = 0;
+    const marks = new Map(), leanOf = new Map(), lines = [];
+    const negGoal = /^¬/.test(state.goal.trim());
+    const classicalOk = rules !== "constructive";
+    const pre = (RULES[rules] || RULES.standard).preamble;
+    if (pre) lines.push(pre, "");
+    for (const d of state.defs) {
+      const bad = !d.sig.trim() || !d.e.trim();
+      if (bad) open++;
+      marks.set(d, bad ? "?" : "·");
+      const l = `def ${d.sig.trim() || "f"} := ${d.e.trim() || "sorry"}`;
+      leanOf.set(d, l); lines.push(l);
+    }
+    if (state.defs.length) lines.push("");
+    if (!state.goal.trim()) open++;
+    const name = (state.title || "my_lemma").replace(/[^\w'.]/g, "_") || "my_lemma";
+    const bt = state.binders.trim();
+    const binders = !bt ? "" : /^[({[⦃]/.test(bt) ? ` ${bt}` : ` (${bt})`;
+    lines.push(`theorem ${name}${binders} : ${state.goal.trim() || "sorry"} := by`);
+    const emit = (list, ind, top) => {
+      const pad = "  ".repeat(ind);
+      if (!list.length) { lines.push(pad + "sorry"); open++; return; }
+      let closed = false;
+      for (const b of list) {
+        let q = false;
+        const first = lines.length;
+        if (closed) {
+          lines.push(`${pad}-- nothing left to prove here: this piece comes after the proof ends`);
+          open++; marks.set(b, "?"); leanOf.set(b, lines[first]); continue;
+        }
+        const v = k => (b[k] || "").trim();
+        switch (b.t) {
+          case "induction":
+            lines.push(`${pad}induction ${v("v") || "n"} with`);
+            lines.push(`${pad}| zero =>`); emit(b.base, ind + 1);
+            lines.push(`${pad}| succ ${v("v") || "n"} ih =>`); emit(b.step, ind + 1);
+            break;
+          case "contra":
+            // Proving ¬P: assume P. Anything else: assume the goal fails (classical).
+            if (top && negGoal) lines.push(`${pad}intro h`);
+            else { q = !classicalOk; lines.push(`${pad}by_contra h`); }
+            emit(b.arm, ind);
+            break;
+          case "cases":
+            q = !v("cond") || !classicalOk;
+            lines.push(`${pad}by_cases h : ${v("cond") || "sorry"}`);
+            lines.push(`${pad}· -- h : ${v("cond") || "…"}`); emit(b.yes, ind + 1);
+            lines.push(`${pad}· -- h : ¬(${v("cond") || "…"})`); emit(b.no, ind + 1);
+            break;
+          case "split":
+            lines.push(`${pad}constructor`);
+            lines.push(`${pad}· -- one way`); emit(b.fwd, ind + 1);
+            lines.push(`${pad}· -- the other way`); emit(b.back, ind + 1);
+            break;
+          case "assume":
+            q = !v("h");
+            lines.push(`${pad}intro ${v("h") || "h"}${v("p") ? `  -- ${v("h") || "h"} : ${v("p")}` : ""}`);
+            break;
+          case "contrapose":
+            q = !classicalOk;
+            lines.push(`${pad}contrapose`);
+            break;
+          case "let":
+            q = !v("x") || !v("e");
+            lines.push(`${pad}set ${v("x") || "x"} := ${v("e") || "sorry"} with h${v("x") || "x"}`);
+            break;
+          case "pick":
+            q = !v("x") || !v("p") || gapReason(b);
+            lines.push(`${pad}obtain ⟨${v("x") || "x"}, h${v("x") || "x"}⟩ : ∃ ${v("x") || "x"}, ${v("p") || "sorry"} := by ${tactic(b, rules)}`);
+            break;
+          case "use":
+            q = !v("w");
+            lines.push(`${pad}refine ⟨${v("w") || "sorry"}, ?_⟩`);
+            break;
+          case "so":
+            q = !v("c") || gapReason(b);
+            lines.push(`${pad}have : ${v("c") || "sorry"} := by ${tactic(b, rules)}`);
+            break;
+          case "rw":
+            q = !v("with");
+            lines.push(`${pad}rw [${v("with") || "sorry"}]`);
+            break;
+          case "done":
+            q = gapReason(b);
+            lines.push(`${pad}${tactic(b, rules)}`);
+            break;
+        }
+        if (q) open++;
+        marks.set(b, q ? "?" : "·");
+        leanOf.set(b, lines[first]);
+        closed = b.t === "done" || b.t in ARMS;
+      }
+      if (!closesList(list)) { lines.push(pad + "sorry -- this arm isn't finished"); open++; }
+    };
+    emit(state.body, 1, true);
+    return { lean: lines.join("\n"), open, marks, leanOf };
+  }
+
+  // ---------- as a proof tree ----------
+  const SHORT = {
+    induction: b => `induction on ${b.v || "n"}`, contra: () => "suppose not", cases: b => `cases: ${b.cond || "…"}`,
+    split: () => "both directions", assume: b => `assume ${b.h || "h"}`, contrapose: () => "contrapositive",
+    let: b => `let ${b.x || "x"}`, pick: b => `pick ${b.x || "x"}`, use: b => `use ${b.w || "…"}`,
+    so: b => b.c || "so …", rw: () => "rewrite", done: b => `done (${b.r === "custom" ? "Lean" : b.r})`, define: b => `define ${(b.sig || "").split(/[\s(:]/)[0] || "…"}`,
+  };
+  const TEXT = {
+    induction: b => `By induction on ${b.v || "n"}.`, contra: () => "Suppose the claim fails, and reach a contradiction.",
+    cases: b => `Split into cases on ${b.cond || "…"}.`, split: () => "Prove each direction (or each part) separately.",
+    assume: b => `Assume ${b.h || "h"}${b.p ? ` : ${b.p}` : ""}.`, contrapose: () => "Prove the contrapositive instead: if the conclusion fails, so does the hypothesis.",
+    let: b => `Let ${b.x || "x"} = ${b.e || "…"}.`, pick: b => `Pick ${b.x || "x"} with ${b.p || "…"}.`, use: b => `Use ${b.w || "…"} as the witness.`,
+    so: b => `So ${b.c || "…"}, because ${REASONS[b.r] || b.r}.`, rw: b => `Rewrite with ${b.with || "…"}.`,
+    done: b => `Done, because ${b.r === "custom" ? (b.tac || "…") : REASONS[b.r] || b.r}.`, define: b => `Define ${b.sig || "…"} = ${b.e || "…"}.`,
+  };
+
+  function toSteps(state, rules) {
+    const c = compile(state, rules);
+    const steps = [];
+    let id = 0;
+    const waiting = "Written. Not checked by Lean yet: the engine isn't connected.";
+    const add = (parent, short, text, lean, open, note) => {
+      steps.push({ id: ++id, parent, short: String(short).slice(0, 40), text, lean: lean || "", status: open ? "yellow" : "unchecked", note: note || (open ? "Open: fill this in or give a real reason." : waiting) });
+      return id;
+    };
+    const root = add(null, state.title || "the claim", `Prove ${state.goal || "…"}`, c.lean.split("\n").find(l => l.startsWith("theorem")), !state.goal.trim());
+    for (const d of state.defs) add(root, SHORT.define(d), TEXT.define(d), c.leanOf.get(d), c.marks.get(d) === "?");
+    const walk = (list, parent) => {
+      for (const b of list) {
+        const me = add(parent, SHORT[b.t](b), TEXT[b.t](b), c.leanOf.get(b), c.marks.get(b) === "?",
+          c.marks.get(b) === "?" && /nothing left/.test(c.leanOf.get(b) || "") ? "This piece comes after the proof already ends." : null);
+        for (const arm of ARMS[b.t] || []) {
+          const unfinished = !closesList(b[arm]);
+          const a = add(me, ARM_LABEL[arm].toLowerCase(), ARM_LABEL[arm] + ".", "", unfinished && !b[arm].length, unfinished && !b[arm].length ? "Empty: nothing proves this case yet." : "");
+          walk(b[arm], a);
+          if (unfinished && b[arm].length) add(a, "unfinished", "This arm doesn't end with Done.", "sorry", true, "This arm stops before the goal is proved.");
+        }
+      }
+    };
+    walk(state.body, root);
+    if (!closesList(state.body)) add(root, "unfinished", "The proof doesn't end with Done.", "sorry", true, "The main proof stops before the goal is proved.");
+    return steps;
+  }
+
+  // ---------- editor ----------
+  const CSS = `
+  .cfb .palette { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .cfb .group { font: 600 11px var(--mono); color: var(--quiet); text-transform: uppercase; letter-spacing: .06em; align-self: center; margin: 0 2px 0 6px; }
+  .cfb .piece { font: 600 13px var(--sans); border: 0; border-radius: 8px; padding: 7px 11px; cursor: grab; color: var(--on-accent); }
+  .cfb .piece.structure { background: var(--accent); }
+  .cfb .piece.fact { background: var(--ink); color: var(--bg); }
+  .cfb .piece.rule { background: var(--panel); color: var(--ink); border: 1.5px dashed var(--ink); }
+  .cfb .target { font-size: 13px; color: var(--quiet); width: 100%; margin: 2px 2px 0; }
+  .cfb .hat { background: var(--accent); color: var(--on-accent); border-radius: 18px 18px 8px 8px; padding: 12px 14px; }
+  .cfb .blk { position: relative; border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+  .cfb .blk::before { content: ""; position: absolute; top: -7px; left: 18px; width: 26px; height: 8px; border-radius: 4px 4px 0 0; background: inherit; }
+  .cfb .blk.structure { background: var(--accent); color: var(--on-accent); }
+  .cfb .blk.fact { background: var(--ink); color: var(--bg); }
+  .cfb .blk.rule { background: var(--panel); border: 1.5px dashed var(--ink); }
+  .cfb .blk.rule::before { display: none; }
+  .cfb .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-size: 14px; margin: 0; }
+  .cfb .slot { width: auto; background: var(--bg); color: var(--ink); border: 0; border-radius: 6px; padding: 4px 8px; min-width: 3ch; font: 13.5px var(--mono); }
+  .cfb .slot:focus { outline: 2px solid var(--yellow); }
+  .cfb .slot.empty { background: var(--yellow-bg); }
+  .cfb select.slot { font: 13px var(--sans); padding: 4px 4px; }
+  .cfb .ctl { margin-left: auto; display: flex; gap: 2px; align-items: center; }
+  .cfb .ctl button { background: transparent; color: inherit; border: 0; font: 15px var(--mono); padding: 2px 6px; cursor: pointer; opacity: .75; border-radius: 6px; min-width: 28px; min-height: 28px; }
+  .cfb .ctl button:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
+  .cfb .badge { font: 700 13px var(--mono); min-width: 1.2em; text-align: center; }
+  .cfb .arm { margin: 8px 0 2px 14px; padding: 4px 8px 10px; border-left: 4px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--ink); cursor: pointer; }
+  .cfb .armhead { font: 600 12px var(--mono); color: var(--quiet); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .cfb .arm.sel { outline: 2.5px solid var(--yellow); outline-offset: 1px; }
+  .cfb .arm.over { background: var(--yellow-bg); }
+  .cfb .drop { font-size: 12.5px; color: var(--quiet); padding: 6px 2px 0; }
+  .cfb .root { margin-left: 0; border-left: 0; background: transparent; padding: 0 0 10px; }`;
+
+  function injectCSS() {
+    if (document.getElementById("cfb-css")) return;
+    const s = document.createElement("style"); s.id = "cfb-css"; s.textContent = CSS; document.head.appendChild(s);
+  }
+
+  function mount(rootEl, opts) {
+    injectCSS();
+    let state = opts.state || blank(), rules = opts.rules || "standard", sel = ["body"], marks = new Map();
+    rootEl.classList.add("cfb");
+    rootEl.innerHTML = `<div class="palette"></div><div class="editor"></div>`;
+    const pal = rootEl.querySelector(".palette"), ed = rootEl.querySelector(".editor");
+    const at = path => path.reduce((o, k) => o[k], state);
+    const samePath = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+    const slot = (b, key, ph, width) => {
+      const v = b[key] || "";
+      return `<input class="slot ${v.trim() ? "" : "empty"}" data-key="${key}" value="${esc(v)}" placeholder="${esc(ph)}" size="${Math.max(width || 4, v.length + 1)}" spellcheck="false" autocapitalize="off" autocomplete="off">`;
+    };
+    const reasonSelect = b => `<select class="slot" data-key="r">${Object.entries(REASONS).map(([k, v]) => `<option value="${k}" ${b.r === k ? "selected" : ""}>${v}</option>`).join("")}</select>${b.r === "custom" ? " " + slot(b, "tac", "exact h 2", 10) : ""}`;
+    const armHTML = (list, path, label, hint) => {
+      const isSel = samePath(path, sel);
+      return `<div class="arm ${isSel ? "sel" : ""}" data-path='${JSON.stringify(path)}'>
+        <div class="armhead"><span>${label}</span>${hint ? `<span>${hint}</span>` : ""}</div>
+        ${list.map((b, i) => blockHTML(b, [...path, i])).join("")}
+        <div class="drop">${isSel ? "Pieces go here." : "Tap to put pieces here."}</div></div>`;
+    };
+    const blockHTML = (b, path) => {
+      const m = marks.get(b) || "·";
+      const ctl = `<span class="ctl"><span class="badge" title="${m === "?" ? "open" : "waiting for Lean"}">${m}</span>
+        <button type="button" data-act="up" aria-label="Move up">↑</button><button type="button" data-act="down" aria-label="Move down">↓</button><button type="button" data-act="del" aria-label="Delete">✕</button></span>`;
+      let inner = "";
+      switch (b.t) {
+        case "induction":
+          inner = `<div class="row">By induction on ${slot(b, "v", "n", 2)}${ctl}</div>
+            ${armHTML(b.base, [...path, "base"], "Base case", `${esc(b.v || "n")} = 0`)}
+            ${armHTML(b.step, [...path, "step"], "Step", `assume it for ${esc(b.v || "n")} (that's ih); show it for ${esc(b.v || "n")} + 1`)}`; break;
+        case "contra": inner = `<div class="row">Suppose not${ctl}</div>${armHTML(b.arm, [...path, "arm"], "Reach a contradiction", "h is what you supposed")}`; break;
+        case "cases":
+          inner = `<div class="row">Cases on ${slot(b, "cond", "n % 2 = 0", 10)}${ctl}</div>
+            ${armHTML(b.yes, [...path, "yes"], "If it holds", "h")}${armHTML(b.no, [...path, "no"], "If it doesn't", "h")}`; break;
+        case "split":
+          inner = `<div class="row">Both directions${ctl}</div>
+            ${armHTML(b.fwd, [...path, "fwd"], "One way (→)", "or the first part of an ∧")}${armHTML(b.back, [...path, "back"], "The other way (←)", "or the second part")}`; break;
+        case "assume": inner = `<div class="row">Assume ${slot(b, "h", "h", 2)} : ${slot(b, "p", "what it says (optional)", 12)}${ctl}</div>`; break;
+        case "contrapose": inner = `<div class="row">Prove the contrapositive<span style="font-weight:400;opacity:.8">: P → Q becomes ¬Q → ¬P</span>${ctl}</div>`; break;
+        case "let": inner = `<div class="row">Let ${slot(b, "x", "x", 2)} = ${slot(b, "e", "expression", 10)}${ctl}</div>`; break;
+        case "pick": inner = `<div class="row">Pick ${slot(b, "x", "k", 2)} with ${slot(b, "p", "n = 2 * k", 10)} because ${reasonSelect(b)}${ctl}</div>`; break;
+        case "use": inner = `<div class="row">Use ${slot(b, "w", "witness", 8)} as the witness${ctl}</div>`; break;
+        case "so": inner = `<div class="row">So ${slot(b, "c", "claim", 12)} because ${reasonSelect(b)}${ctl}</div>`; break;
+        case "rw": inner = `<div class="row">Rewrite with ${slot(b, "with", "lemma, ih", 12)}${ctl}</div>`; break;
+        case "done": inner = `<div class="row">Done because ${reasonSelect(b)}${ctl}</div>`; break;
+        case "define": inner = `<div class="row">Define ${slot(b, "sig", "double (n : ℕ) : ℕ", 14)} = ${slot(b, "e", "n + n", 8)}${ctl}</div>`; break;
+      }
+      return `<div class="blk ${PIECES[b.t].cat}" data-path='${JSON.stringify(path)}'>${inner}</div>`;
+    };
+
+    const changed = c => opts.onChange && opts.onChange(state, rules, c);
+    function render() {
+      const c = compile(state, rules); marks = c.marks;
+      const hat = `<div class="hat">
+        <div class="row">Prove ${slot(state, "goal", "the claim, in Lean", 18)}</div>
+        <div class="row" style="margin-top:6px;font-weight:500">for ${slot(state, "binders", "n : ℕ", 6)} &nbsp;named ${slot(state, "title", "my_lemma", 8)}</div></div>`;
+      const defs = state.defs.length ? `<div class="arm root" data-path='["defs"]'>${state.defs.map((d, i) => blockHTML(d, ["defs", i])).join("")}</div>` : "";
+      ed.innerHTML = defs + hat + `<div class="arm root ${samePath(sel, ["body"]) ? "sel" : ""}" data-path='["body"]'>
+        ${state.body.map((b, i) => blockHTML(b, ["body", i])).join("")}
+        <div class="drop">${samePath(sel, ["body"]) ? "Pieces go here." : "Tap here to put pieces in the main proof."}</div></div>`;
+      changed(c);
+    }
+    const by = cat => Object.entries(PIECES).filter(([, p]) => p.cat === cat)
+      .map(([k, p]) => `<button type="button" class="piece ${cat}" draggable="true" data-piece="${k}">${p.label}</button>`).join("");
+    pal.innerHTML = `<span class="group">Structure</span>${by("structure")}<span class="group">Facts</span>${by("fact")}<span class="group">Rules</span>${by("rule")}
+      <div class="target">Tap a piece to add it to the highlighted spot, or drag it into any arm.</div>`;
+
+    function add(kind, path) {
+      const b = PIECES[kind].make();
+      if (kind === "define") { state.defs.push(b); render(); return; }
+      const list = at(path || sel);
+      list.push(b);
+      if (ARMS[b.t]) sel = [...(path || sel), list.length - 1, ARMS[b.t][0]];
+      render();
+      const first = [...ed.querySelectorAll(".slot.empty")].pop();
+      if (first && !["done", "contrapose"].includes(kind)) first.focus();
+    }
+    pal.addEventListener("click", e => { const p = e.target.closest(".piece"); if (p) add(p.dataset.piece); });
+    pal.addEventListener("dragstart", e => { const p = e.target.closest(".piece"); if (p) e.dataTransfer.setData("text/plain", p.dataset.piece); });
+    ed.addEventListener("dragover", e => {
+      const a = e.target.closest(".arm"); if (!a || a.dataset.path === '["defs"]') return;
+      e.preventDefault(); ed.querySelectorAll(".arm.over").forEach(x => x.classList.remove("over")); a.classList.add("over");
+    });
+    ed.addEventListener("dragleave", e => { const a = e.target.closest(".arm"); if (a && !a.contains(e.relatedTarget)) a.classList.remove("over"); });
+    ed.addEventListener("drop", e => {
+      const a = e.target.closest(".arm"); const k = e.dataTransfer.getData("text/plain");
+      if (!a || !PIECES[k]) return;
+      e.preventDefault(); sel = JSON.parse(a.dataset.path); add(k, sel);
+    });
+    ed.addEventListener("click", e => {
+      const btn = e.target.closest("button[data-act]");
+      if (btn) {
+        const path = JSON.parse(btn.closest(".blk").dataset.path);
+        const list = at(path.slice(0, -1)), i = path[path.length - 1];
+        const inside = sel.length > path.length && samePath(sel.slice(0, path.length), path);
+        if (btn.dataset.act === "del") { list.splice(i, 1); if (inside) sel = path[0] === "defs" ? ["body"] : path.slice(0, -1); }
+        else {
+          const j = btn.dataset.act === "up" ? i - 1 : i + 1;
+          if (j < 0 || j >= list.length) return;
+          [list[i], list[j]] = [list[j], list[i]];
+          if (inside) sel = [...path.slice(0, -1), j, ...sel.slice(path.length)];
+        }
+        render(); return;
+      }
+      if (e.target.closest(".slot")) return;
+      const a = e.target.closest(".arm");
+      if (a && a.dataset.path !== '["defs"]') { sel = JSON.parse(a.dataset.path); render(); }
+    });
+    const targetOf = el => { const blk = el.closest(".blk"); return blk ? at(JSON.parse(blk.dataset.path)) : state; };
+    ed.addEventListener("input", e => {
+      const s = e.target.closest(".slot"); if (!s || s.tagName !== "INPUT") return;
+      targetOf(s)[s.dataset.key] = s.value;
+      s.size = Math.max(4, s.value.length + 1); s.classList.toggle("empty", !s.value.trim());
+      const c = compile(state, rules); marks = c.marks;
+      ed.querySelectorAll(".blk").forEach(el => {
+        const badge = el.querySelector(":scope > .row .badge");
+        if (badge) badge.textContent = marks.get(at(JSON.parse(el.dataset.path))) || "·";
+      });
+      changed(c);
+    });
+    ed.addEventListener("change", e => {
+      const s = e.target; if (s.tagName !== "SELECT" || !s.classList.contains("slot")) return;
+      targetOf(s)[s.dataset.key] = s.value; render();
+    });
+
+    render();
+    return {
+      get: () => ({ state, rules }),
+      set: (st, r) => { state = st; rules = r || rules; sel = ["body"]; render(); },
+      setRules: r => { rules = r; render(); },
+      compile: () => compile(state, rules),
+    };
+  }
+
+  window.CodfishBlocks = { RULES, REASONS, PIECES, compile, toSteps, mount, blank };
+})();

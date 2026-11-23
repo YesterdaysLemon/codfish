@@ -7,6 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
 <link rel="stylesheet" href="/themes.css">
 <script src="/themes.js"></script>
+<script src="/blocks.js"></script>
+<script src="/playbook.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
@@ -18,47 +20,11 @@
   .links { display: flex; gap: 12px; align-items: center; font-size: 14px; flex-wrap: wrap; }
   .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 12px 18px 0; }
   .bar label { font: 600 12px var(--mono); color: var(--quiet); text-transform: uppercase; letter-spacing: .06em; }
-  select, input { font: inherit; color: var(--ink); }
-  .bar select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .bar select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; max-width: 100%; }
   .rulesnote { color: var(--quiet); font-size: 13.5px; padding: 6px 18px 0; }
+  .guest { margin: 10px 18px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; color: var(--quiet); }
   main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; padding: 14px 18px 30px; align-items: start; }
   @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
-
-  /* palette */
-  .palette { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .palette .group { font: 600 11px var(--mono); color: var(--quiet); text-transform: uppercase; letter-spacing: .06em; align-self: center; margin: 0 2px 0 6px; }
-  .piece { font: 600 13px var(--sans); border: 0; border-radius: 8px; padding: 7px 11px; cursor: grab; color: var(--on-accent); }
-  .piece.structure { background: var(--accent); }
-  .piece.fact { background: var(--ink); color: var(--bg); }
-  .piece.rule { background: var(--panel); color: var(--ink); border: 1.5px dashed var(--ink); }
-  .target { font-size: 13px; color: var(--quiet); width: 100%; margin: 2px 2px 0; }
-
-  /* blocks */
-  .hat { background: var(--accent); color: var(--on-accent); border-radius: 18px 18px 8px 8px; padding: 12px 14px; }
-  .blk { position: relative; border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
-  .blk::before { content: ""; position: absolute; top: -7px; left: 18px; width: 26px; height: 8px; border-radius: 4px 4px 0 0; background: inherit; }
-  .blk.structure { background: var(--accent); color: var(--on-accent); }
-  .blk.fact { background: var(--ink); color: var(--bg); }
-  .blk.rule { background: var(--panel); border: 1.5px dashed var(--ink); }
-  .blk.rule::before { display: none; }
-  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-size: 14px; }
-  .slot { background: var(--bg); color: var(--ink); border: 0; border-radius: 6px; padding: 4px 8px; min-width: 3ch; font: 13.5px var(--mono); }
-  .slot:focus { outline: 2px solid var(--yellow); }
-  .slot.empty { background: var(--yellow-bg); }
-  select.slot { font: 13px var(--sans); padding: 4px 4px; }
-  .ctl { margin-left: auto; display: flex; gap: 2px; }
-  .ctl button { background: transparent; color: inherit; border: 0; font: 15px var(--mono); padding: 2px 6px; cursor: pointer; opacity: .75; border-radius: 6px; min-width: 28px; min-height: 28px; }
-  .ctl button:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
-  .badge { font: 700 13px var(--mono); min-width: 1.2em; text-align: center; }
-  .arm { margin: 8px 0 2px 14px; padding: 4px 8px 10px; border-left: 4px solid color-mix(in srgb, currentColor 35%, transparent);
-    border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--ink); cursor: pointer; }
-  .arm > .armhead { font: 600 12px var(--mono); color: var(--quiet); display: flex; gap: 8px; align-items: baseline; }
-  .arm.sel { outline: 2.5px solid var(--yellow); outline-offset: 1px; }
-  .arm.over { background: var(--yellow-bg); }
-  .drop { font-size: 12.5px; color: var(--quiet); padding: 6px 2px 0; }
-  .root { margin-left: 0; border-left: 0; background: transparent; padding: 0 0 10px; }
-
-  /* lean side */
   .side { position: sticky; top: 10px; display: flex; flex-direction: column; gap: 10px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
   .panel h2 { margin: 0 0 6px; font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--quiet); }
@@ -87,23 +53,21 @@
   <select id="rules"></select>
 </div>
 <div class="rulesnote" id="rulesNote"></div>
+<div class="guest">This is the try-it-out version. In <a href="/app#new/blocks">your workspace</a>, Blocks sits next to Lean files and sketches, and your proofs are saved to your account.</div>
 <main>
-  <section>
-    <div class="palette" id="palette" aria-label="Pieces"></div>
-    <div id="editor"></div>
-  </section>
+  <section id="editor"></section>
   <aside class="side">
     <div class="panel">
       <h2>Board</h2>
       <div class="status" id="status"></div>
-      <div class="legend"><b>·</b> written, waiting for Lean &nbsp; <b>?</b> open: a gap or an unfinished arm. Only Lean paints a step green, and the Lean engine isn't connected yet.</div>
+      <div class="legend"><b>·</b> bud: written, waiting for Lean &nbsp; <b>?</b> greenwood: a gap or an unfinished arm. Only Lean paints a step green, and the Lean engine isn't connected yet.</div>
     </div>
     <div class="panel">
       <h2>Lean, live</h2>
       <pre class="lean" id="lean"></pre>
     </div>
     <div class="btns">
-      <button class="btn" id="send">Send to workspace</button>
+      <button class="btn" id="send">Save to my workspace</button>
       <button class="btn quiet" id="copy">Copy Lean</button>
     </div>
     <div class="msg" id="msg" aria-live="polite"></div>
@@ -113,223 +77,10 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-// ---------- the rules (variants) ----------
-const RULES = {
-  standard: { label: "Standard", note: "Ordinary mathematics." },
-  sheep: { label: "Sheep", note: "Addition is breeding: x ⊕ y = x + y + 1, written breed x y in Lean. So breed 1 1 = 3, and the reasons unfold breed for you.",
-    preamble: "def breed (x y : ℤ) : ℤ := x + y + 1" },
-  trivial: { label: "Trivial ring", note: "Work in a ring where 0 = 1, so every equation holds.", preamble: "variable {R : Type} [CommRing R] [Subsingleton R]" },
-  constructive: { label: "Constructive", note: "No excluded middle. Suppose not and Cases need it, so they're marked ? unless you're proving a negation." },
-};
-
-// ---------- reasons ----------
-const REASONS = {
-  ring: "it's algebra (ring)",
-  simp: "simplify (simp)",
-  norm_num: "compute (norm_num)",
-  omega: "whole-number facts (omega)",
-  linarith: "add up inequalities (linarith)",
-  assumption: "it's a hypothesis",
-  decide: "check every case (decide)",
-  obvious: "obvious (leaves a gap)",
-};
-function tactic(reason, rules) {
-  if (reason === "obvious") return "sorry";
-  if (rules === "sheep") {
-    if (reason === "ring") return "simp only [breed]; ring";
-    if (reason === "simp" || reason === "norm_num") return `${reason} [breed]`;
-  }
-  return reason;
-}
-const reasonSelect = (b, key) => `<select class="slot" data-key="${key}">${Object.entries(REASONS).map(([k, v]) => `<option value="${k}" ${b[key] === k ? "selected" : ""}>${v}</option>`).join("")}</select>`;
-
-// ---------- pieces ----------
-const PIECES = {
-  induction: { cat: "structure", label: "By induction", make: () => ({ t: "induction", v: "n", base: [], step: [] }) },
-  contra:    { cat: "structure", label: "Suppose not", make: () => ({ t: "contra", arm: [] }) },
-  cases:     { cat: "structure", label: "Cases", make: () => ({ t: "cases", cond: "", yes: [], no: [] }) },
-  let:       { cat: "fact", label: "Let", make: () => ({ t: "let", x: "", e: "" }) },
-  pick:      { cat: "fact", label: "Pick", make: () => ({ t: "pick", x: "", p: "", r: "obvious" }) },
-  so:        { cat: "fact", label: "So", make: () => ({ t: "so", c: "", r: "obvious" }) },
-  rw:        { cat: "fact", label: "Rewrite with", make: () => ({ t: "rw", with: "" }) },
-  done:      { cat: "fact", label: "Done", make: () => ({ t: "done", r: "obvious" }) },
-  define:    { cat: "rule", label: "Define", make: () => ({ t: "define", sig: "", e: "" }) },
-};
-const ARMS = { induction: ["base", "step"], contra: ["arm"], cases: ["yes", "no"] };
-
-// ---------- examples ----------
-const EXAMPLES = {
-  odd: { label: "Sum of the first n odd numbers", rules: "standard", s: {
-    title: "odd_sum", binders: "n : ℕ", goal: "∑ i ∈ Finset.range n, (2 * i + 1) = n ^ 2", defs: [],
-    body: [{ t: "induction", v: "n", base: [{ t: "done", r: "simp" }],
-      step: [{ t: "rw", with: "Finset.sum_range_succ, ih" }, { t: "done", r: "ring" }] }] } },
-  gap: { label: "n² + n is even (with a gap)", rules: "standard", s: {
-    title: "even_sq_add", binders: "n : ℕ", goal: "2 ∣ n ^ 2 + n", defs: [],
-    body: [{ t: "so", c: "n ^ 2 + n = n * (n + 1)", r: "ring" }, { t: "done", r: "obvious" }] } },
-  sheep: { label: "1 + 1 = 3 (Sheep rules)", rules: "sheep", s: {
-    title: "one_plus_one", binders: "", goal: "breed 1 1 = 3", defs: [], body: [{ t: "done", r: "norm_num" }] } },
-  sheepcomm: { label: "Breeding is commutative (Sheep)", rules: "sheep", s: {
-    title: "breed_comm", binders: "x y : ℤ", goal: "breed x y = breed y x", defs: [], body: [{ t: "done", r: "ring" }] } },
-  double: { label: "Define your own: double", rules: "standard", s: {
-    title: "double_even", binders: "n : ℕ", goal: "2 ∣ double n", defs: [{ t: "define", sig: "double (n : ℕ) : ℕ", e: "n + n" }],
-    body: [{ t: "so", c: "double n = 2 * n", r: "obvious" }, { t: "done", r: "omega" }] } },
-  blank: { label: "Blank", rules: "standard", s: { title: "my_lemma", binders: "", goal: "", defs: [], body: [] } },
-};
-
-// ---------- state ----------
+const PB = window.CodfishPlaybook;
 const KEY = "codfish-blocks";
-let state, rules, sel = ["body"];
-function load() {
-  try { const x = JSON.parse(localStorage.getItem(KEY)); if (x && x.s && x.rules) { state = x.s; rules = x.rules; return; } } catch (e) {}
-  state = structuredClone(EXAMPLES.odd.s); rules = "standard";
-}
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ s: state, rules })); } catch (e) {} };
 
-// A path is a list of keys from state down to an array, e.g. ["body", 0, "step"].
-const at = path => path.reduce((o, k) => o[k], state);
-const samePath = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-
-// ---------- Lean ----------
-function closes(list) {
-  const last = list[list.length - 1];
-  return !!last && (last.t === "done" || last.t in ARMS);
-}
-const classical = () => rules === "constructive" && !/^¬|→\s*False\s*$/.test(state.goal.trim());
-
-// Returns { lean, open } where open counts the yellow spots.
-function compile() {
-  let open = 0;
-  const marks = new Map(); // block -> "?" | "·"
-  const lines = [];
-  const pre = RULES[rules].preamble;
-  if (pre) lines.push(pre, "");
-  for (const d of state.defs) {
-    const bad = !d.sig.trim() || !d.e.trim();
-    if (bad) open++;
-    marks.set(d, bad ? "?" : "·");
-    lines.push(`def ${d.sig.trim() || "f"} := ${d.e.trim() || "sorry"}`);
-  }
-  if (state.defs.length) lines.push("");
-  if (!state.goal.trim()) open++;
-  const name = (state.title || "my_lemma").replace(/[^\w']/g, "_") || "my_lemma";
-  const binders = state.binders.trim() ? ` (${state.binders.trim()})` : "";
-  lines.push(`theorem ${name}${binders} : ${state.goal.trim() || "sorry"} := by`);
-  const emit = (list, ind) => {
-    const pad = "  ".repeat(ind);
-    if (!list.length) { lines.push(pad + "sorry"); open++; return; }
-    let closed = false;
-    for (const b of list) {
-      let q = false;
-      if (closed) {
-        // Something after Done (or after a piece whose arms finish the proof) has nothing left to prove.
-        lines.push(`${pad}-- nothing left to prove here: this piece comes after the proof ends`);
-        open++; marks.set(b, "?"); continue;
-      }
-      switch (b.t) {
-        case "induction":
-          lines.push(`${pad}induction ${b.v.trim() || "n"} with`);
-          lines.push(`${pad}| zero =>`); emit(b.base, ind + 1);
-          lines.push(`${pad}| succ ${b.v.trim() || "n"} ih =>`); emit(b.step, ind + 1);
-          break;
-        case "contra":
-          q = classical();
-          lines.push(`${pad}by_contra h`); emit(b.arm, ind);
-          break;
-        case "cases":
-          q = !b.cond.trim() || rules === "constructive";
-          lines.push(`${pad}by_cases h : ${b.cond.trim() || "sorry"}`);
-          lines.push(`${pad}· -- h : ${b.cond.trim() || "…"}`); emit(b.yes, ind + 1);
-          lines.push(`${pad}· -- h : ¬(${b.cond.trim() || "…"})`); emit(b.no, ind + 1);
-          break;
-        case "let":
-          q = !b.x.trim() || !b.e.trim();
-          lines.push(`${pad}set ${b.x.trim() || "x"} := ${b.e.trim() || "sorry"} with h${b.x.trim() || "x"}`);
-          break;
-        case "pick":
-          q = !b.x.trim() || !b.p.trim() || b.r === "obvious";
-          lines.push(`${pad}obtain ⟨${b.x.trim() || "x"}, h${b.x.trim() || "x"}⟩ : ∃ ${b.x.trim() || "x"}, ${b.p.trim() || "sorry"} := by ${tactic(b.r, rules)}`);
-          break;
-        case "so":
-          q = !b.c.trim() || b.r === "obvious";
-          lines.push(`${pad}have : ${b.c.trim() || "sorry"} := by ${tactic(b.r, rules)}`);
-          break;
-        case "rw":
-          q = !b.with.trim();
-          lines.push(`${pad}rw [${b.with.trim() || "sorry"}]`);
-          break;
-        case "done":
-          q = b.r === "obvious";
-          lines.push(`${pad}${tactic(b.r, rules)}`);
-          break;
-      }
-      if (q) open++;
-      marks.set(b, q ? "?" : "·");
-      closed = b.t === "done" || b.t in ARMS;
-    }
-    if (!closes(list)) { lines.push(pad + "sorry -- this arm isn't finished"); open++; }
-  };
-  emit(state.body, 1);
-  return { lean: lines.join("\n"), open, marks };
-}
-
-// ---------- rendering ----------
-function slot(b, key, ph, width) {
-  const v = b[key] || "";
-  return `<input class="slot ${v.trim() ? "" : "empty"}" data-key="${key}" value="${esc(v)}" placeholder="${esc(ph)}" size="${Math.max(width || 4, v.length + 1)}" spellcheck="false" autocapitalize="off">`;
-}
-function armHTML(list, path, label, hint) {
-  const isSel = samePath(path, sel);
-  return `<div class="arm ${isSel ? "sel" : ""}" data-path='${JSON.stringify(path)}'>
-    <div class="armhead"><span>${label}</span>${hint ? `<span>${hint}</span>` : ""}</div>
-    ${list.map((b, i) => blockHTML(b, [...path, i])).join("")}
-    <div class="drop">${isSel ? "Pieces go here." : "Tap to put pieces here."}</div>
-  </div>`;
-}
-function blockHTML(b, path) {
-  const m = marks.get(b) || "·";
-  const ctl = `<span class="ctl"><span class="badge" title="${m === "?" ? "open" : "waiting for Lean"}">${m}</span>
-    <button data-act="up" aria-label="Move up">↑</button><button data-act="down" aria-label="Move down">↓</button><button data-act="del" aria-label="Delete">✕</button></span>`;
-  const cat = PIECES[b.t].cat;
-  let inner = "";
-  switch (b.t) {
-    case "induction":
-      inner = `<div class="row">By induction on ${slot(b, "v", "n", 2)}${ctl}</div>
-        ${armHTML(b.base, [...path, "base"], "Base case", "n = 0")}
-        ${armHTML(b.step, [...path, "step"], "Step", `assume it for ${esc(b.v || "n")} (that's ih); show it for ${esc(b.v || "n")} + 1`)}`;
-      break;
-    case "contra":
-      inner = `<div class="row">Suppose not${ctl}</div>${armHTML(b.arm, [...path, "arm"], "Reach a contradiction", "h is the negated goal")}`;
-      break;
-    case "cases":
-      inner = `<div class="row">Cases on ${slot(b, "cond", "n % 2 = 0", 10)}${ctl}</div>
-        ${armHTML(b.yes, [...path, "yes"], "If it holds", "h")}${armHTML(b.no, [...path, "no"], "If it doesn't", "h")}`;
-      break;
-    case "let": inner = `<div class="row">Let ${slot(b, "x", "x", 2)} = ${slot(b, "e", "expression", 10)}${ctl}</div>`; break;
-    case "pick": inner = `<div class="row">Pick ${slot(b, "x", "k", 2)} with ${slot(b, "p", "n = 2 * k", 10)} because ${reasonSelect(b, "r")}${ctl}</div>`; break;
-    case "so": inner = `<div class="row">So ${slot(b, "c", "claim", 12)} because ${reasonSelect(b, "r")}${ctl}</div>`; break;
-    case "rw": inner = `<div class="row">Rewrite with ${slot(b, "with", "lemma, ih", 12)}${ctl}</div>`; break;
-    case "done": inner = `<div class="row">Done because ${reasonSelect(b, "r")}${ctl}</div>`; break;
-    case "define": inner = `<div class="row">Define ${slot(b, "sig", "double (n : ℕ) : ℕ", 14)} = ${slot(b, "e", "n + n", 8)}${ctl}</div>`; break;
-  }
-  return `<div class="blk ${cat}" data-path='${JSON.stringify(path)}'>${inner}</div>`;
-}
-
-let marks = new Map();
-function render() {
-  const c = compile();
-  marks = c.marks;
-  const hat = `<div class="hat">
-    <div class="row">Prove ${slot(state, "goal", "the claim, in Lean", 18)}</div>
-    <div class="row" style="margin-top:6px;font-weight:500">for ${slot(state, "binders", "n : ℕ", 6)} &nbsp;named ${slot(state, "title", "my_lemma", 8)}</div>
-  </div>`;
-  const defs = state.defs.length ? `<div class="arm root" data-path='["defs"]'>${state.defs.map((d, i) => blockHTML(d, ["defs", i])).join("")}</div>` : "";
-  $("editor").innerHTML = defs + hat + `<div class="arm root ${samePath(sel, ["body"]) ? "sel" : ""}" data-path='["body"]'>
-    ${state.body.map((b, i) => blockHTML(b, ["body", i])).join("")}
-    <div class="drop">${samePath(sel, ["body"]) ? "Pieces go here." : "Tap here to put pieces in the main proof."}</div></div>`;
-  showLean(c);
-}
-function showLean(c) {
+function show(state, rules, c) {
   $("lean").innerHTML = esc(c.lean).replace(/\bsorry\b/g, '<span class="sorry">sorry</span>');
   const name = c.open ? "Proofish" : "Codfish";
   $("nameText").textContent = name;
@@ -337,113 +88,49 @@ function showLean(c) {
   $("status").innerHTML = c.open
     ? `<b>? ${c.open} open</b>: fill the yellow slots and swap each “obvious” for a real reason.`
     : `<b>· No gaps left.</b> Every arm ends and every step has a reason. When the Lean engine is connected it will check each one and paint it green; until then nothing here is green.`;
-  save();
+  $("rulesNote").textContent = CodfishBlocks.RULES[rules].note;
+  $("rules").value = rules;
+  try { localStorage.setItem(KEY, JSON.stringify({ s: state, rules })); } catch (e) {}
 }
 
-function renderPalette() {
-  const by = cat => Object.entries(PIECES).filter(([, p]) => p.cat === cat)
-    .map(([k, p]) => `<button class="piece ${cat}" draggable="true" data-piece="${k}">${p.label}</button>`).join("");
-  $("palette").innerHTML = `<span class="group">Structure</span>${by("structure")}<span class="group">Facts</span>${by("fact")}<span class="group">Rules</span>${by("rule")}
-    <div class="target" id="target"></div>`;
-  $("target").textContent = "Tap a piece to add it to the highlighted spot, or drag it into any arm.";
-}
+$("rules").innerHTML = Object.entries(CodfishBlocks.RULES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
+let saved = null;
+try { const x = JSON.parse(localStorage.getItem(KEY)); if (x && x.s && Array.isArray(x.s.body) && CodfishBlocks.RULES[x.rules]) saved = x; } catch (e) {}
+const first = PB.find(e => e.id === "induction-odd");
+// /blocks#<playbook id> opens that playbook proof (the board links here).
+const linked = PB.find(e => e.id === location.hash.slice(1));
+const startWith = linked ? { s: structuredClone(linked.blocks), rules: linked.rules } : saved || { s: structuredClone(first.blocks), rules: first.rules };
+const ed = CodfishBlocks.mount($("editor"), { state: startWith.s, rules: startWith.rules, onChange: show });
 
-// ---------- editing ----------
-function add(kind, path) {
-  const b = PIECES[kind].make();
-  if (kind === "define") { state.defs.push(b); render(); return; }
-  at(path || sel).push(b);
-  // A new structure piece takes the focus, so the next pieces go inside it.
-  if (ARMS[b.t]) sel = [...(path || sel), at(path || sel).length - 1, ARMS[b.t][0]];
-  render();
-  const first = [...document.querySelectorAll(".slot.empty")].pop();
-  if (first && kind !== "done") first.focus();
-}
-
-$("palette").addEventListener("click", e => { const p = e.target.closest(".piece"); if (p) add(p.dataset.piece); });
-$("palette").addEventListener("dragstart", e => { const p = e.target.closest(".piece"); if (p) e.dataTransfer.setData("text/plain", p.dataset.piece); });
-$("editor").addEventListener("dragover", e => {
-  const a = e.target.closest(".arm"); if (!a || a.dataset.path === '["defs"]') return;
-  e.preventDefault(); document.querySelectorAll(".arm.over").forEach(x => x.classList.remove("over")); a.classList.add("over");
-});
-$("editor").addEventListener("dragleave", e => { const a = e.target.closest(".arm"); if (a && !a.contains(e.relatedTarget)) a.classList.remove("over"); });
-$("editor").addEventListener("drop", e => {
-  const a = e.target.closest(".arm"); const k = e.dataTransfer.getData("text/plain");
-  if (!a || !PIECES[k]) return;
-  e.preventDefault(); sel = JSON.parse(a.dataset.path); add(k, sel);
-});
-
-$("editor").addEventListener("click", e => {
-  const btn = e.target.closest("button[data-act]");
-  if (btn) {
-    const path = JSON.parse(btn.closest(".blk").dataset.path);
-    const list = at(path.slice(0, -1)), i = path[path.length - 1];
-    if (btn.dataset.act === "del") {
-      list.splice(i, 1);
-      // If the selected arm was inside the deleted block, fall back to its parent arm.
-      if (sel.length > path.length && samePath(sel.slice(0, path.length), path)) sel = path.slice(0, -1);
-    } else {
-      const j = btn.dataset.act === "up" ? i - 1 : i + 1;
-      if (j < 0 || j >= list.length) return;
-      [list[i], list[j]] = [list[j], list[i]];
-      if (sel.length > path.length && samePath(sel.slice(0, path.length), path)) sel = [...path.slice(0, -1), j, ...sel.slice(path.length)];
-    }
-    render(); return;
-  }
-  if (e.target.closest(".slot")) return;
-  const a = e.target.closest(".arm");
-  if (a && a.dataset.path !== '["defs"]') { sel = JSON.parse(a.dataset.path); render(); }
-});
-
-function targetOf(el) {
-  const blk = el.closest(".blk");
-  return blk ? at(JSON.parse(blk.dataset.path)) : state;
-}
-$("editor").addEventListener("input", e => {
-  const s = e.target.closest(".slot"); if (!s) return;
-  targetOf(s)[s.dataset.key] = s.value;
-  if (s.tagName === "INPUT") { s.size = Math.max(4, s.value.length + 1); s.classList.toggle("empty", !s.value.trim()); }
-  const c = compile(); marks = c.marks; showLean(c);
-  // Refresh badges without re-rendering (so focus stays in the slot).
-  document.querySelectorAll(".blk").forEach(el => {
-    const m = marks.get(at(JSON.parse(el.dataset.path))) || "·";
-    const badge = el.querySelector(":scope > .row .badge"); if (badge) badge.textContent = m;
-  });
-});
-$("editor").addEventListener("change", e => { if (e.target.tagName === "SELECT") render(); });
-
-// ---------- controls ----------
-$("example").innerHTML = Object.entries(EXAMPLES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("") + `<option value="" disabled>──</option><option value="mine" selected>My blocks</option>`;
+const techniques = [...new Set(PB.map(e => e.technique))];
+$("example").innerHTML = `<option value="mine" selected>My blocks</option><option value="blank">A blank page</option>` +
+  techniques.map(t => `<optgroup label="${esc(t)}">${PB.filter(e => e.technique === t).map(e => `<option value="${e.id}">${esc(e.title)}</option>`).join("")}</optgroup>`).join("");
 $("example").onchange = () => {
-  const ex = EXAMPLES[$("example").value]; if (!ex) return;
-  state = structuredClone(ex.s); rules = ex.rules; sel = ["body"];
-  $("rules").value = rules; showRules(); render();
+  const v = $("example").value;
+  const ex = PB.find(e => e.id === v);
+  if (ex) ed.set(structuredClone(ex.blocks), ex.rules);
+  else if (v === "blank") ed.set(CodfishBlocks.blank(), "standard");
   $("example").value = "mine";
 };
-$("rules").innerHTML = Object.entries(RULES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
-const showRules = () => { $("rulesNote").textContent = RULES[rules].note; };
-$("rules").onchange = () => { rules = $("rules").value; showRules(); render(); };
+$("rules").onchange = () => ed.setRules($("rules").value);
 
 $("copy").onclick = async () => {
-  try { await navigator.clipboard.writeText(compile().lean); $("msg").textContent = "Copied."; } catch (e) { $("msg").textContent = "Couldn't copy here; select the Lean and copy it by hand."; }
+  try { await navigator.clipboard.writeText(ed.compile().lean); $("msg").textContent = "Copied."; } catch (e) { $("msg").textContent = "Couldn't copy here; select the Lean and copy it by hand."; }
 };
 $("send").onclick = async () => {
-  $("msg").textContent = "Sending…";
+  $("msg").textContent = "Saving…";
+  const { state, rules } = ed.get();
   try {
     const r = await fetch("/api/proofs", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: state.title || "Blocks proof", kind: "lean", source: compile().lean + "\n", variant: rules }) });
+      body: JSON.stringify({ title: state.title || "Blocks proof", kind: "lean", source: ed.compile().lean + "\n", blocks: state, variant: rules }) });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { $("msg").innerHTML = `Sign in first: <a href="/app">open the workspace</a>, then come back. Your blocks are saved on this device.`; return; }
+    if (r.status === 401) { $("msg").innerHTML = `Sign in first: <a href="/app">open the workspace</a>, then come back. Your blocks are kept on this device.`; return; }
     if (!r.ok) throw new Error(j.error || r.status);
-    $("msg").innerHTML = `Sent. <a href="/app#${j.id}">Open it in the workspace →</a>`;
-  } catch (e) { $("msg").textContent = `Couldn't send: ${e.message}`; }
+    $("msg").innerHTML = `Saved. <a href="/app#${j.id}">Open it in your workspace →</a>`;
+  } catch (e) { $("msg").textContent = `Couldn't save: ${e.message}`; }
 };
 
-load();
-$("rules").value = rules; showRules();
 CodfishTheme.mount($("lookPick"));
-renderPalette();
-render();
 </script>
 </body>
 </html>

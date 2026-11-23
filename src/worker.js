@@ -5,6 +5,9 @@ import THEMES_CSS from "../public/themes.css";
 import THEMES_JS from "../public/themes.js.txt";
 import DAILY_HTML from "../public/daily.html";
 import BLOCKS_HTML from "../public/blocks.html";
+import BLOCKS_JS from "../public/blocks.js.txt";
+import BONSAI_JS from "../public/bonsai.js.txt";
+import PLAYBOOK_JS from "../public/playbook.js.txt";
 import { parseLean } from "./lean.js";
 import { PROVIDERS, VARIANTS, variantOf, HOUSE_MODEL, MAX_CALL_MICRO, houseCharge, parseModelTree, runHouse, runOwn } from "./llm.js";
 
@@ -236,14 +239,15 @@ async function deleteAccount(user, env) {
 
 // ---------- proofs ----------
 
-const proofOut = r => ({ id: r.id, title: r.title, kind: r.kind, variant: variantOf(r.variant), source: r.source, analysis: r.analysis ? JSON.parse(r.analysis) : null, createdAt: r.created_at, updatedAt: r.updated_at });
+const parseJSON = t => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
+const proofOut = r => ({ id: r.id, title: r.title, kind: r.kind, variant: variantOf(r.variant), blocks: parseJSON(r.blocks), source: r.source, analysis: r.analysis ? JSON.parse(r.analysis) : null, createdAt: r.created_at, updatedAt: r.updated_at });
 
 async function listProofs(user, env) {
-  const r = await env.DB.prepare("SELECT id, title, kind, variant, analysis, updated_at FROM proofs WHERE user_id = ? ORDER BY updated_at DESC").bind(user.id).all();
+  const r = await env.DB.prepare("SELECT id, title, kind, variant, blocks IS NOT NULL AS has_blocks, analysis, updated_at FROM proofs WHERE user_id = ? ORDER BY updated_at DESC").bind(user.id).all();
   return json(r.results.map(p => {
     const steps = p.analysis ? JSON.parse(p.analysis).steps || [] : [];
     const count = c => steps.filter(s => s.status === c).length;
-    return { id: p.id, title: p.title, kind: p.kind, variant: variantOf(p.variant), updatedAt: p.updated_at, tally: { green: count("green"), yellow: count("yellow"), red: count("red"), unchecked: count("unchecked"), total: steps.length } };
+    return { id: p.id, title: p.title, kind: p.kind, blocks: !!p.has_blocks, variant: variantOf(p.variant), updatedAt: p.updated_at, tally: { green: count("green"), yellow: count("yellow"), red: count("red"), unchecked: count("unchecked"), total: steps.length } };
   }));
 }
 
@@ -255,7 +259,14 @@ function validProof(b) {
   if (!source.trim()) throw new HttpError(400, "The proof is empty.");
   if (source.length > MAX_SOURCE) throw new HttpError(413, "That proof is over 100 KB.");
   const variant = b.variant === undefined ? undefined : variantOf(b.variant);
-  return { title, kind, source, variant };
+  // Blocks proofs are Lean proofs that also keep the blocks they were built from.
+  let blocks;
+  if (b.blocks !== undefined && b.blocks !== null) {
+    if (kind !== "lean" || typeof b.blocks !== "object" || !Array.isArray(b.blocks.body)) throw new HttpError(400, "Those blocks don't look right.");
+    blocks = JSON.stringify(b.blocks);
+    if (blocks.length > 50_000) throw new HttpError(413, "That's too many blocks.");
+  }
+  return { title, kind, source, variant, blocks };
 }
 
 async function createProof(request, user, env) {
@@ -263,8 +274,8 @@ async function createProof(request, user, env) {
   const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM proofs WHERE user_id = ?").bind(user.id).first();
   if (n.n >= MAX_PROOFS) throw new HttpError(403, `You can keep up to ${MAX_PROOFS} proofs. Delete some first.`);
   const id = newId(), now = Date.now();
-  await env.DB.prepare("INSERT INTO proofs (id, user_id, title, kind, source, variant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, user.id, p.title, p.kind, p.source, p.variant || "standard", now, now).run();
+  await env.DB.prepare("INSERT INTO proofs (id, user_id, title, kind, source, variant, blocks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, user.id, p.title, p.kind, p.source, p.variant || "standard", p.blocks || null, now, now).run();
   return getProof(user, env, id, 201);
 }
 
@@ -276,14 +287,16 @@ async function getProof(user, env, id, status = 200) {
 
 async function updateProof(request, user, env, id) {
   const b = await body(request);
-  const old = await env.DB.prepare("SELECT kind, source, title, variant FROM proofs WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  const old = await env.DB.prepare("SELECT kind, source, title, variant, blocks FROM proofs WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!old) throw new HttpError(404, "No such proof.");
   const p = validProof({ kind: old.kind, title: old.title, source: old.source, ...b });
   const variant = p.variant || variantOf(old.variant);
   // New source or new rules make the old analysis stale.
   const changed = p.source !== old.source || variant !== variantOf(old.variant);
-  await env.DB.prepare(`UPDATE proofs SET title = ?, kind = ?, source = ?, variant = ?, updated_at = ?${changed ? ", analysis = NULL" : ""} WHERE id = ? AND user_id = ?`)
-    .bind(p.title, p.kind, p.source, variant, Date.now(), id, user.id).run();
+  // Editing the Lean by hand drops the blocks (they'd no longer match); sending blocks keeps them.
+  const blocks = p.blocks !== undefined ? p.blocks : p.source === old.source ? old.blocks : null;
+  await env.DB.prepare(`UPDATE proofs SET title = ?, kind = ?, source = ?, variant = ?, blocks = ?, updated_at = ?${changed ? ", analysis = NULL" : ""} WHERE id = ? AND user_id = ?`)
+    .bind(p.title, p.kind, p.source, variant, blocks, Date.now(), id, user.id).run();
   return getProof(user, env, id);
 }
 
@@ -428,6 +441,8 @@ export default {
       if (url.pathname === "/app" || url.pathname === "/app/") return new Response(APP_HTML, { headers: HTML_HEADERS });
       if (url.pathname === "/daily" || url.pathname === "/daily/") return new Response(DAILY_HTML, { headers: HTML_HEADERS });
       if (url.pathname === "/blocks" || url.pathname === "/blocks/") return new Response(BLOCKS_HTML, { headers: HTML_HEADERS });
+      const js = { "/blocks.js": BLOCKS_JS, "/bonsai.js": BONSAI_JS, "/playbook.js": PLAYBOOK_JS }[url.pathname];
+      if (js) return new Response(js, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       if (url.pathname === "/themes.css") return new Response(THEMES_CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       if (url.pathname === "/themes.js") return new Response(THEMES_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       return new Response("Not found", { status: 404 });

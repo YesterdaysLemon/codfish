@@ -36,4 +36,6 @@ That deploy has to be run from the Windows side of Tome (for example a Codex ses
 - Once Lean runs: check every daily answer and every Blocks proof with it, and only then let either page show green.
 - Leaderboards for the daily (results are already stored per user in `daily_results`).
 - Blocks: drag to reorder existing pieces (only arrows today), and import a Lean file back into blocks.
+- Playbook: run every playbook proof through Lean (they're written, not checked) and fix any that fail; then they can turn green for real.
+- Bonsai: group sketches by topic as well as structure (ask the model for a group label per step), and keep the moves list in step with what's folded.
 - Variants: the Lean preamble for each rule set lives in both `src/llm.js` and `public/blocks.html`; move it to one place when the engine needs it.

@@ -1,0 +1,145 @@
+// Proof Bonsai: draws a proof tree that you can zoom out of.
+// Zoomed out, a whole subproof folds into one limb, drawn thicker the more it holds, with a strip
+// showing how much of it is heartwood (verified), greenwood (open), scar (broken) or bud (unchecked).
+// Tap a limb to open it.
+//   CodfishBonsai.draw(el, steps, { selected, onSelect })   steps: [{ id, parent, short, status, group? }]
+//   CodfishBonsai.settle(steps) -> steps with .eff (worst of the subtree), .size, .tally
+//   CodfishBonsai.WOOD, CodfishBonsai.legend()
+(function () {
+  const WOOD = {
+    green:     { wood: "heartwood", word: "verified",  glyph: "✓", fg: "var(--green)",  bg: "var(--green-bg)" },
+    yellow:    { wood: "greenwood", word: "open",      glyph: "?", fg: "var(--yellow)", bg: "var(--yellow-bg)" },
+    red:       { wood: "scar",      word: "broken",    glyph: "✗", fg: "var(--red)",    bg: "var(--red-bg)" },
+    unchecked: { wood: "bud",       word: "unchecked", glyph: "·", fg: "var(--grey)",   bg: "var(--grey-bg)" },
+  };
+  const RANK = { green: 0, unchecked: 1, yellow: 2, red: 3 };
+  const ORDER = ["green", "yellow", "red", "unchecked"];
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const MAX_VISIBLE = 28, MAX_BREADTH = 8;
+
+  function settle(steps) {
+    const kids = new Map();
+    for (const s of steps) { if (!kids.has(s.parent)) kids.set(s.parent, []); kids.get(s.parent).push(s); }
+    const out = new Map();
+    const visit = s => {
+      if (out.has(s.id)) return out.get(s.id);
+      const r = { ...s, eff: WOOD[s.status] ? s.status : "unchecked", size: 1, tally: { green: 0, yellow: 0, red: 0, unchecked: 0 } };
+      r.tally[r.eff]++;
+      out.set(s.id, r);
+      for (const k of kids.get(s.id) || []) {
+        const c = visit(k);
+        if (RANK[c.eff] > RANK[r.eff]) r.eff = c.eff;
+        r.size += c.size;
+        for (const t of ORDER) r.tally[t] += c.tally[t];
+      }
+      return r;
+    };
+    steps.forEach(visit);
+    return steps.map(s => out.get(s.id));
+  }
+
+  const legend = () => ORDER.map(k => { const w = WOOD[k];
+    return `<span><span class="glyph" style="color:${w.fg};font-family:var(--mono);font-weight:700">${w.glyph}</span> <b>${w.wood}</b> ${w.word}</span>`; }).join("");
+
+  function draw(el, rawSteps, opts = {}) {
+    const steps = settle(rawSteps);
+    const st = el._bonsai || (el._bonsai = { expanded: new Set(), collapsed: new Set(), level: null, key: null });
+    const key = rawSteps.map(s => s.id).join(",");
+    if (st.key !== key) { st.key = key; st.expanded.clear(); st.collapsed.clear(); st.level = null; }
+    const byId = new Map(steps.map(s => [s.id, s]));
+    const kids = id => steps.filter(s => s.parent === id);
+    const depth = new Map();
+    const setDepth = (s, d) => { depth.set(s.id, d); kids(s.id).forEach(k => setDepth(k, d + 1)); };
+    const roots = steps.filter(s => s.parent === null || !byId.has(s.parent));
+    roots.forEach(r => setDepth(r, 0));
+    const maxDepth = Math.max(0, ...depth.values());
+
+    // Pick a starting zoom that keeps the picture readable.
+    // Start at the deepest level that stays readable: not too many nodes, and not too wide.
+    const countAt = L => steps.filter(s => depth.get(s.id) <= L).length;
+    const breadthAt = L => steps.filter(s => depth.get(s.id) === L).length;
+    if (st.level === null) {
+      st.level = maxDepth;
+      for (let L = 1; L <= maxDepth; L++) if (countAt(L) > MAX_VISIBLE || breadthAt(L) > MAX_BREADTH) { st.level = Math.max(1, L - 1); break; }
+    }
+    const isOpen = s => !st.collapsed.has(s.id) && (depth.get(s.id) < st.level || st.expanded.has(s.id));
+    const visible = [];
+    const walk = s => { visible.push(s); if (isOpen(s)) kids(s.id).forEach(walk); };
+    roots.forEach(walk);
+    const vis = new Set(visible.map(s => s.id));
+    const folded = s => !isOpen(s) && kids(s.id).length > 0;
+
+    // Layout: leaves in a row, parents centred over their children.
+    const nodeW = 154, nodeH = 40, gapX = 14, gapY = 86;
+    const pos = {}; let leaf = 0, deepest = 0;
+    const place = s => {
+      const d = depth.get(s.id); deepest = Math.max(deepest, d);
+      const ks = kids(s.id).filter(k => vis.has(k.id));
+      const y = d * gapY + nodeH / 2 + 8;
+      if (!ks.length) { pos[s.id] = { x: leaf++ * (nodeW + gapX) + nodeW / 2 + 4, y }; return; }
+      ks.forEach(place);
+      pos[s.id] = { x: (pos[ks[0].id].x + pos[ks[ks.length - 1].id].x) / 2, y };
+    };
+    roots.forEach(place);
+    const W = Math.max(leaf * (nodeW + gapX) + 8, nodeW + 20), H = (deepest + 1) * gapY + 16;
+    const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+    const edges = visible.filter(s => vis.has(s.parent) && pos[s.parent]).map(s => {
+      const a = pos[s.parent], b = pos[s.id], my = (a.y + b.y) / 2, w = WOOD[s.eff];
+      const width = Math.min(16, 2 + 2.2 * Math.sqrt(s.size));
+      return `<path d="M${a.x} ${a.y + nodeH / 2} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y - nodeH / 2}" fill="none" stroke="${w.fg}" stroke-width="${width.toFixed(1)}" stroke-linecap="round" opacity="${s.eff === "green" ? .7 : .45}"/>`;
+    }).join("");
+
+    const nodes = visible.map(s => {
+      const p = pos[s.id], w = WOOD[s.eff], f = folded(s);
+      const x = p.x - nodeW / 2, y = p.y - nodeH / 2;
+      let strip = "";
+      if (f) {
+        let off = 0;
+        strip = ORDER.map(k => { const part = s.tally[k] / s.size * (nodeW - 16); const r = part > 0 ? `<rect x="${x + 8 + off}" y="${y + nodeH - 9}" width="${part}" height="4" fill="${WOOD[k].fg}"/>` : ""; off += part; return r; }).join("");
+      }
+      const label = `${w.glyph} ${esc(clip(s.short || "", f ? 17 : 21))}${f ? ` <tspan font-weight="700">+${s.size - 1}</tspan>` : ""}`;
+      return `<g class="bnode ${opts.selected === s.id ? "sel" : ""} ${f ? "folded" : ""}" data-id="${s.id}" tabindex="0" role="button"
+        aria-label="${esc(s.short)}, ${w.wood} (${w.word})${f ? `, ${s.size - 1} steps folded inside` : ""}">
+        ${f ? `<rect x="${x + 5}" y="${y + 5}" width="${nodeW}" height="${nodeH}" rx="10" fill="${w.bg}" stroke="${w.fg}" stroke-width="1.5" opacity=".6"/>` : ""}
+        <rect x="${x}" y="${y}" width="${nodeW}" height="${nodeH}" rx="10" fill="${w.bg}" stroke="${w.fg}" stroke-width="${opts.selected === s.id ? 3.5 : 2}" ${s.group ? 'stroke-dasharray="5 4"' : ""}/>
+        <text x="${p.x}" y="${p.y + (f ? 1 : 4)}" text-anchor="middle">${label}</text>${strip}</g>`;
+    }).join("");
+
+    const levels = [[1, "Trunk"]];
+    if (maxDepth > 2) levels.push([2, "Limbs"]);
+    levels.push([maxDepth, "Every twig"]);
+    const hiddenCount = steps.length - visible.length;
+    el.innerHTML = `<div class="bonsai-bar">
+        ${maxDepth > 1 ? `<span class="bonsai-zoom" role="group" aria-label="Zoom">${levels.map(([L, n]) => `<button type="button" data-level="${L}" aria-pressed="${st.level === L && !st.expanded.size && !st.collapsed.size}">${n}</button>`).join("")}</span>` : ""}
+        <span class="bonsai-count">${hiddenCount ? `${visible.length} of ${steps.length} shown · tap a limb to open it` : `${steps.length} step${steps.length === 1 ? "" : "s"}`}</span>
+      </div>
+      <div class="bonsai-scroll"><svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${Math.round(W * 0.6)}px);max-width:${W}px;height:auto" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Proof tree">${edges}${nodes}</svg></div>`;
+
+    el.querySelectorAll("[data-level]").forEach(b => b.onclick = () => { st.level = +b.dataset.level; st.expanded.clear(); st.collapsed.clear(); draw(el, rawSteps, opts); });
+    el.querySelectorAll(".bnode").forEach(g => {
+      const act = () => {
+        const s = byId.get(+g.dataset.id);
+        if (folded(s)) { st.collapsed.delete(s.id); st.expanded.add(s.id); }
+        else if (opts.selected === s.id && kids(s.id).length && s.parent !== null) { st.expanded.delete(s.id); st.collapsed.add(s.id); }
+        if (opts.onSelect) opts.onSelect(s.id); else draw(el, rawSteps, opts);
+      };
+      g.onclick = act; g.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } };
+    });
+  }
+
+  const CSS = `
+  .bonsai-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 2px 4px 8px; font-size: 13px; color: var(--quiet); }
+  .bonsai-zoom { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .bonsai-zoom button { font: 600 12px var(--sans); border: 0; background: var(--panel); color: var(--ink); padding: 5px 11px; cursor: pointer; }
+  .bonsai-zoom button + button { border-left: 1px solid var(--line); }
+  .bonsai-zoom button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .bonsai-scroll { overflow-x: auto; }
+  .bnode { cursor: pointer; }
+  .bnode text { font: 12.5px var(--sans); fill: var(--ink); pointer-events: none; }
+  .bnode:focus { outline: none; }
+  .bnode:focus-visible rect:last-of-type { stroke-width: 3.5; }`;
+  if (!document.getElementById("bonsai-css")) { const s = document.createElement("style"); s.id = "bonsai-css"; s.textContent = CSS; document.head.appendChild(s); }
+
+  window.CodfishBonsai = { draw, settle, legend, WOOD, RANK };
+})();

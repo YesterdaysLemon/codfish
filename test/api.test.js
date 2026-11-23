@@ -4,6 +4,8 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import worker from "../dist/worker.js";
+import { parseLean } from "../src/lean.js";
+import vm from "node:vm";
 
 // ---- a D1-shaped wrapper around node:sqlite ----
 function d1(db) {
@@ -63,6 +65,11 @@ test("pages are served", async () => {
   assert.match((await req("GET", "/app")).body, /Sign in to Codfish/);
   assert.match((await req("GET", "/daily")).body, /Lemma of the Day/);
   assert.match((await req("GET", "/blocks")).body, /Blocks/);
+  for (const js of ["/blocks.js", "/bonsai.js", "/playbook.js"]) {
+    const r = await req("GET", js);
+    assert.equal(r.status, 200, js);
+    assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  }
   assert.equal((await req("GET", "/nope")).status, 404);
 });
 
@@ -247,6 +254,63 @@ test("sign out ends the session; deleting the account removes everything", async
   assert.equal(left.n, 0);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM daily_results").get().n, 0);
   assert.equal((await req("GET", "/api/me", null, alice)).status, 401);
+});
+
+// Load the browser scripts into a sandbox to test the playbook and the blocks compiler.
+const sandbox = { window: {} };
+vm.createContext(sandbox);
+for (const f of ["blocks.js.txt", "playbook.js.txt"]) vm.runInContext(readFileSync(new URL(`../public/${f}`, import.meta.url), "utf8"), sandbox);
+const { CodfishBlocks: CB, CodfishPlaybook: PB } = sandbox.window;
+
+test("playbook: every proof compiles to Lean, complete ones have no gaps, and the tree shows the structure", async () => {
+  assert.ok(PB.length >= 12);
+  const techniques = new Set(PB.map(e => e.technique));
+  for (const t of ["Direct proof", "Contrapositive", "Contradiction", "Induction", "Cases", "Construction", "Both directions", "Counterexample"]) assert.ok(techniques.has(t), t);
+  const gappy = new Set(["gap", "contradiction-sqrt2"]);
+  for (const e of PB) {
+    const c = CB.compile(e.blocks, e.rules);
+    assert.equal(c.open === 0, !gappy.has(e.id), `${e.id}: ${c.open} open\n${c.lean}`);
+    assert.ok(e.sketch.length > 20, e.id);
+    const parsed = parseLean(c.lean);
+    assert.ok(parsed.ok, e.id);
+    assert.equal(parsed.steps.some(s => s.status === "yellow"), gappy.has(e.id), `${e.id} sorry detection`);
+    assert.ok(!parsed.steps.some(s => s.status === "green"));
+    const tree = CB.toSteps(e.blocks, e.rules);
+    assert.ok(!tree.some(s => s.status === "green"), "blocks trees are never green");
+    assert.equal(tree.filter(s => s.parent === null).length, 1);
+  }
+  const ind = parseLean(CB.compile(PB.find(e => e.id === "induction-odd").blocks, "standard").lean);
+  assert.deepEqual(ind.steps.map(s => s.short), ["odd_sum", "induction on n", "base case", "step"]);
+  const cases = parseLean(CB.compile(PB.find(e => e.id === "cases-abs").blocks, "standard").lean);
+  assert.deepEqual(cases.steps.map(s => s.short), ["le_abs_self'", "cases: 0 ≤ x", "if 0 ≤ x", "otherwise"]);
+  const iff = parseLean(CB.compile(PB.find(e => e.id === "iff").blocks, "standard").lean);
+  assert.ok(iff.steps.some(s => s.short === "both parts"));
+});
+
+test("Lean files: results are grouped by namespace", async () => {
+  const r = parseLean("namespace A\ntheorem x : True := trivial\ntheorem y : True := by\n  sorry\nend A\nnamespace B\ntheorem z : True := trivial\nend B\n");
+  const short = id => r.steps.find(s => s.id === id).short;
+  assert.deepEqual(r.steps.filter(s => s.group).map(s => s.short), ["this file", "A", "B"]);
+  assert.equal(short(r.steps.find(s => s.short === "y").parent), "A");
+  assert.equal(r.steps.find(s => s.short === "y").status, "yellow");
+});
+
+test("blocks proofs keep their blocks; editing the Lean by hand drops them", async () => {
+  const u = await signIn("blocky@example.com", "7.7.7.7");
+  const e = JSON.parse(JSON.stringify(PB.find(x => x.id === "induction-odd"))); // plain objects, not the sandbox's
+  const lean = CB.compile(e.blocks, e.rules).lean + "\n";
+  const p = await req("POST", "/api/proofs", { title: e.title, kind: "lean", source: lean, blocks: e.blocks, variant: e.rules }, u);
+  assert.equal(p.status, 201, JSON.stringify(p.body));
+  assert.deepEqual(p.body.blocks, e.blocks);
+  assert.equal((await req("GET", "/api/proofs", null, u)).body[0].blocks, true);
+  const a = await req("POST", `/api/proofs/${p.body.id}/analyze`, null, u);
+  assert.deepEqual(a.body.analysis.steps.map(s => s.short), ["odd_sum", "induction on n", "base case", "step"]);
+  // Title-only edits and rule changes keep the blocks.
+  assert.deepEqual((await req("PUT", `/api/proofs/${p.body.id}`, { title: "renamed" }, u)).body.blocks, e.blocks);
+  // A hand edit to the Lean drops them.
+  assert.equal((await req("PUT", `/api/proofs/${p.body.id}`, { source: lean + "-- tweak\n" }, u)).body.blocks, null);
+  assert.equal((await req("POST", "/api/proofs", { title: "x", kind: "sketch", source: "hi", blocks: e.blocks }, u)).status, 400, "only Lean proofs carry blocks");
+  assert.equal((await req("POST", "/api/proofs", { title: "x", kind: "lean", source: "theorem t : True := trivial", blocks: { body: "nope" } }, u)).status, 400);
 });
 
 let failed = 0;

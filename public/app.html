@@ -7,6 +7,9 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
 <link rel="stylesheet" href="/themes.css">
 <script src="/themes.js"></script>
+<script src="/bonsai.js"></script>
+<script src="/blocks.js"></script>
+<script src="/playbook.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
@@ -84,6 +87,13 @@
   #settings h3 { margin: 22px 0 4px; font-size: 15px; }
   .credit { font: 700 22px var(--mono); }
   .empty { color: var(--quiet); padding: 40px 0; text-align: center; }
+  .startrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 2px; }
+  .startrow select { width: auto; max-width: 100%; }
+  .blocksgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; margin-top: 10px; align-items: start; }
+  @media (max-width: 1000px) { .blocksgrid { grid-template-columns: minmax(0, 1fr); } }
+  .leanside { position: sticky; top: 10px; padding: 12px 14px; }
+  .leanside pre { margin: 6px 0 0; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-x: auto; }
+  .leanside pre .sorry { background: var(--yellow-bg); border-radius: 3px; padding: 0 2px; }
   .chip { font: 600 11px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--quiet); white-space: nowrap; }
   .chip.rules { border-color: var(--accent); color: var(--accent); }
   .rulesrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 13.5px; }
@@ -136,10 +146,10 @@
 
 <script>
 const COLORS = {
-  green:     { fg: "var(--green)",  bg: "var(--green-bg)",  word: "verified" },
-  yellow:    { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "open" },
-  red:       { fg: "var(--red)",    bg: "var(--red-bg)",    word: "broken" },
-  unchecked: { fg: "var(--grey)",   bg: "var(--grey-bg)",   word: "unchecked" },
+  green:     { fg: "var(--green)",  bg: "var(--green-bg)",  word: "heartwood · verified" },
+  yellow:    { fg: "var(--yellow)", bg: "var(--yellow-bg)", word: "greenwood · open" },
+  red:       { fg: "var(--red)",    bg: "var(--red-bg)",    word: "scar · broken" },
+  unchecked: { fg: "var(--grey)",   bg: "var(--grey-bg)",   word: "bud · unchecked" },
 };
 const GLYPH = { green: "✓", yellow: "?", red: "✗", unchecked: "·" };
 const RANK = { green: 0, unchecked: 1, yellow: 2, red: 3 };
@@ -202,7 +212,10 @@ async function boot() {
   $("who").textContent = me.email; $("settingsBtn").classList.remove("hidden"); $("signoutBtn").classList.remove("hidden");
   await refreshList();
   const want = location.hash.slice(1);
-  if (want && proofs.some(p => p.id === want)) openProof(want); else if (proofs.length) openProof(proofs[0].id); else showNew();
+  // #new, #new/blocks, #new/blocks/<playbook id>: start a new proof (links from the board and Blocks).
+  const nw = want.match(/^new(?:\/(lean|sketch|blocks))?(?:\/([\w-]+))?$/);
+  if (nw) showNew({ kind: nw[1], playbook: nw[2] });
+  else if (want && proofs.some(p => p.id === want)) openProof(want); else if (proofs.length) openProof(proofs[0].id); else showNew();
 }
 
 // ---------- list ----------
@@ -213,55 +226,103 @@ async function refreshList() {
     const t = p.tally, w = c => t.total ? (100 * t[c] / t.total) : 0;
     return `<div class="item ${current?.id === p.id ? "sel" : ""}" data-id="${p.id}">
       <span class="mini">${["green", "yellow", "red", "unchecked"].map(c => `<i style="width:${w(c)}%;background:${COLORS[c].fg}"></i>`).join("")}</span>
-      <span class="t">${esc(p.title)}</span>${p.variant && p.variant !== "standard" ? `<span class="chip rules">${esc(me.variants?.[p.variant]?.label || p.variant)}</span>` : ""}<span class="k">${p.kind === "lean" ? ".lean" : "sketch"}</span></div>`;
+      <span class="t">${esc(p.title)}</span>${p.variant && p.variant !== "standard" ? `<span class="chip rules">${esc(me.variants?.[p.variant]?.label || p.variant)}</span>` : ""}<span class="k">${p.blocks ? "blocks" : p.kind === "lean" ? ".lean" : "sketch"}</span></div>`;
   }).join("") : `<p class="hint">No proofs yet.</p>`;
   document.querySelectorAll(".item").forEach(el => el.onclick = () => openProof(el.dataset.id));
 }
 
 // ---------- new proof ----------
 
-function showNew() {
+const PLAYBOOK = window.CodfishPlaybook || [];
+const sorryHTML = lean => esc(lean).replace(/\bsorry\b/g, '<span class="sorry">sorry</span>');
+function blocksSide(c) {
+  $("bLean").innerHTML = sorryHTML(c.lean);
+  $("bStatus").innerHTML = c.open
+    ? `<b>? ${c.open} open.</b> Fill the yellow slots, and swap each “obvious” for a real reason.`
+    : `<b>· No gaps left.</b> Waiting for Lean: nothing turns green until the engine checks it.`;
+  setName(c.open ? ["yellow"] : ["unchecked"]);
+}
+const blocksPane = () => `<div id="blocksMode" class="blocksgrid hidden"><div id="blocksEd"></div>
+  <div class="panel leanside"><div class="hint" id="bStatus"></div><pre id="bLean"></pre></div></div>`;
+
+// start: { kind: "lean" | "sketch" | "blocks", playbook: id }
+function showNew(start = {}) {
   current = null; selected = null; location.hash = "";
   showWork(); setName([]);
   document.querySelectorAll(".item").forEach(el => el.classList.remove("sel"));
+  if (start.kind) draftKind = start.kind;
   const provider = me.settings.provider === "house" ? `the house model (pay-as-you-go)` : esc(me.providers[me.settings.provider]?.label || me.settings.provider) + " with your key";
+  const techniques = [...new Set(PLAYBOOK.map(e => e.technique))];
   $("main").innerHTML = `
     <h2 style="margin:0">New proof</h2>
-    <div class="tabs" role="group" aria-label="Proof type">
-      <button data-kind="lean" aria-pressed="${draftKind === "lean"}">Lean file</button>
-      <button data-kind="sketch" aria-pressed="${draftKind === "sketch"}">Sketch of an idea</button>
+    <div class="startrow"><label for="pstart" style="margin:0">Start from</label>
+      <select id="pstart"><option value="">A blank page</option>${techniques.map(t => `<optgroup label="${esc(t)}">${PLAYBOOK.filter(e => e.technique === t).map(e => `<option value="${e.id}">${esc(e.title)}</option>`).join("")}</optgroup>`).join("")}</select>
+      <span class="hint">The playbook: one classic proof for each move.</span></div>
+    <div class="tabs" role="group" aria-label="How to write it">
+      <button data-kind="lean" aria-pressed="false">Lean file</button>
+      <button data-kind="sketch" aria-pressed="false">Sketch of an idea</button>
+      <button data-kind="blocks" aria-pressed="false">Build with blocks</button>
     </div>
     <p class="hint" id="kindHint"></p>
     <label for="ptitle">Title</label>
     <input id="ptitle" type="text" maxlength="120" placeholder="Untitled proof">
-    <div id="fileRow"><label for="pfile">Drop in a .lean file, or paste below</label><input id="pfile" type="file" accept=".lean,text/plain"></div>
     <label for="prules">Rules</label>
     <div class="rulesrow"><select id="prules">${rulesOptions("standard")}</select><span class="hint" id="prulesHint">${rulesBlurb("standard")}</span></div>
-    <label for="psrc">Proof</label>
-    <textarea id="psrc" spellcheck="false"></textarea>
+    <div id="textMode">
+      <div id="fileRow"><label for="pfile">Drop in a .lean file, or paste below</label><input id="pfile" type="file" accept=".lean,text/plain"></div>
+      <label for="psrc">Proof</label>
+      <textarea id="psrc" spellcheck="false"></textarea>
+    </div>
+    ${blocksPane()}
     <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><span class="msg" id="newMsg" role="status"></span></div>`;
-  $("prules").onchange = () => { $("prulesHint").innerHTML = rulesBlurb($("prules").value); };
+
+  let picked = null, dirty = false, ed = null;
+  const editor = () => ed || (ed = CodfishBlocks.mount($("blocksEd"), { state: picked ? structuredClone(picked.blocks) : CodfishBlocks.blank(), rules: $("prules").value, onChange: (st, r, c) => blocksSide(c) }));
+  const fillText = () => {
+    if (!picked || dirty || draftKind === "blocks") return;
+    $("psrc").value = draftKind === "sketch" ? picked.sketch : CodfishBlocks.compile(picked.blocks, picked.rules).lean + "\n";
+  };
+  $("psrc").oninput = () => { dirty = true; };
+  const setRules = v => { $("prules").value = v; $("prulesHint").innerHTML = rulesBlurb(v); if (ed) ed.setRules(v); };
+  $("prules").onchange = () => setRules($("prules").value);
   const setKind = k => {
     draftKind = k;
     document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === k));
+    $("textMode").classList.toggle("hidden", k === "blocks");
+    $("blocksMode").classList.toggle("hidden", k !== "blocks");
     $("fileRow").classList.toggle("hidden", k !== "lean");
-    $("kindHint").innerHTML = k === "lean"
-      ? "Each theorem, lemma and <code>have</code> becomes a node. <code>sorry</code> shows as yellow; everything else is grey until the Lean engine is connected."
-      : `A model splits your sketch into steps and writes each one as a Lean statement, using ${provider}. Change this in Settings. Model output is never marked green.`;
+    $("kindHint").innerHTML = {
+      lean: "Each theorem and lemma becomes a node, with its proof's structure inside: induction cases, <code>by_cases</code> arms, <code>have</code>s. <code>sorry</code> shows as greenwood (?); everything else is a bud until the Lean engine is connected.",
+      sketch: `A model splits your sketch into steps and writes each one as a Lean statement, using ${provider}. Change this in Settings. Model output is never marked green.`,
+      blocks: "Snap pieces together and the Lean writes itself. It's saved as a Lean proof that remembers its blocks, so you can come back and keep building. “Obvious” leaves a gap (?).",
+    }[k];
     $("psrc").placeholder = k === "lean" ? "import Mathlib\n\ntheorem my_result : ... := by\n  sorry" : "Write the argument the way you'd explain it at a whiteboard.";
+    if (k === "blocks") { editor(); blocksSide(ed.compile()); } else { setName([]); fillText(); }
   };
+  const pick = id => {
+    picked = PLAYBOOK.find(e => e.id === id) || null; dirty = false;
+    if (picked) { $("ptitle").value = picked.title; setRules(picked.rules); }
+    if (ed) ed.set(picked ? structuredClone(picked.blocks) : CodfishBlocks.blank(), $("prules").value);
+    if (!picked && !dirty) $("psrc").value = "";
+    fillText();
+  };
+  $("pstart").onchange = () => pick($("pstart").value);
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setKind(b.dataset.kind));
+  if (start.playbook && PLAYBOOK.some(e => e.id === start.playbook)) { $("pstart").value = start.playbook; pick(start.playbook); }
   setKind(draftKind);
   $("pfile").onchange = async () => {
     const f = $("pfile").files[0]; if (!f) return;
     if (f.size > 100_000) { $("newMsg").className = "msg err"; $("newMsg").textContent = "That file is over 100 KB."; return; }
-    $("psrc").value = await f.text();
+    $("psrc").value = await f.text(); dirty = true;
     if (!$("ptitle").value) $("ptitle").value = f.name.replace(/\.lean$/, "");
   };
   $("saveBtn").onclick = async () => {
     $("saveBtn").disabled = true; $("newMsg").className = "msg"; $("newMsg").textContent = draftKind === "sketch" ? "Saving, then asking the model…" : "Saving…";
     try {
-      const p = await call("POST", "/api/proofs", { title: $("ptitle").value, kind: draftKind, source: $("psrc").value, variant: $("prules").value });
+      const body = draftKind === "blocks"
+        ? { title: $("ptitle").value || editor().get().state.title, kind: "lean", source: editor().compile().lean + "\n", blocks: editor().get().state, variant: $("prules").value }
+        : { title: $("ptitle").value, kind: draftKind, source: $("psrc").value, variant: $("prules").value };
+      const p = await call("POST", "/api/proofs", body);
       current = p; await refreshList(); await runAnalysis(p.id);
     } catch (err) { $("newMsg").className = "msg err"; $("newMsg").textContent = err.message; $("saveBtn").disabled = false; }
   };
@@ -283,20 +344,7 @@ async function runAnalysis(id, msgEl) {
   renderProof(); await refreshList();
 }
 
-function settle(steps) {
-  // A node's colour is the worst of its own and its children's.
-  const kids = id => steps.filter(s => s.parent === id);
-  const eff = new Map();
-  const visit = s => {
-    if (eff.has(s.id)) return eff.get(s.id);
-    eff.set(s.id, s.status);
-    let worst = s.status;
-    for (const k of kids(s.id)) { const c = visit(k); if (RANK[c] > RANK[worst]) worst = c; }
-    eff.set(s.id, worst); return worst;
-  };
-  steps.forEach(visit);
-  return steps.map(s => ({ ...s, eff: eff.get(s.id) }));
-}
+const settle = steps => CodfishBonsai.settle(steps);
 
 function renderProof(error) {
   const p = current, a = p.analysis;
@@ -306,9 +354,9 @@ function renderProof(error) {
   $("main").innerHTML = `
     <div class="titlebar"><h2>${esc(p.title)}</h2>
       <button class="btn" id="againBtn">${a ? "Analyze again" : "Analyze"}</button>
-      <button class="btn" id="editBtn">Edit</button>
+      <button class="btn" id="editBtn">${p.blocks ? "Edit blocks" : "Edit"}</button>
       <button class="btn danger" id="delBtn">Delete</button></div>
-    <div class="hint">${p.kind === "lean" ? "Lean file" : "Sketch"} · ${by}</div>
+    <div class="hint">${p.blocks ? "Built with blocks" : p.kind === "lean" ? "Lean file" : "Sketch"} · ${by}</div>
     <div class="rulesrow"><label for="vrules" style="margin:0">Rules</label><select id="vrules">${rulesOptions(p.variant || "standard")}</select>
       <span class="hint">${rulesBlurb(p.variant || "standard")}${p.kind === "sketch" && p.variant !== "standard" ? " The model judges the sketch under these rules. Its verdicts stay unchecked until Lean runs, so nothing turns green yet." : ""}</span></div>
     <div class="msg ${error ? "err" : ""}" id="pMsg" role="status">${esc(error || "")}</div>
@@ -316,7 +364,7 @@ function renderProof(error) {
       <div class="panel bar" id="bar" aria-label="Eval bar"></div>
       <div class="panel tree" id="tree"></div>
       <div class="panel moves" id="moves"></div></div>
-      <div class="legend">${Object.entries(COLORS).map(([k, c]) => `<span><span class="glyph" style="color:${c.fg}">${GLYPH[k]}</span>${c.word}</span>`).join("")}</div>`
+      <div class="legend">${CodfishBonsai.legend()}</div>`
       : `<div class="empty">Not analyzed yet.</div>`}
     <details class="src"><summary>Source</summary><div class="lean">${esc(p.source)}</div></details>`;
   $("againBtn").onclick = async () => { $("againBtn").disabled = true; $("pMsg").className = "msg"; $("pMsg").textContent = "Analyzing…"; await runAnalysis(p.id); };
@@ -328,7 +376,11 @@ function renderProof(error) {
   $("vrules").onchange = async () => {
     $("vrules").disabled = true; $("pMsg").className = "msg"; $("pMsg").textContent = "Switching rules…";
     try {
-      current = await call("PUT", `/api/proofs/${p.id}`, { variant: $("vrules").value });
+      const v = $("vrules").value;
+      // A blocks proof rewrites its Lean for the new rules (Sheep adds the definition of breed, and so on).
+      current = await call("PUT", `/api/proofs/${p.id}`, p.blocks
+        ? { variant: v, blocks: p.blocks, source: CodfishBlocks.compile(p.blocks, v).lean + "\n" }
+        : { variant: v });
       await refreshList();
       // A Lean file re-reads for free. A sketch costs a model call, so wait for the Analyze button.
       if (p.kind === "lean") await runAnalysis(p.id); else renderProof();
@@ -345,10 +397,32 @@ function confirmDelete() {
   return false;
 }
 
-function showEdit() {
+function showEditBlocks() {
   const p = current;
+  $("main").innerHTML = `<h2 style="margin:0">Edit blocks</h2>
+    <label for="ptitle">Title</label><input id="ptitle" type="text" maxlength="120" value="${esc(p.title)}">
+    ${blocksPane()}
+    <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><button class="btn" id="cancelBtn">Cancel</button>
+      <button class="link" type="button" id="asLean">Edit the Lean by hand instead</button><span class="msg" id="newMsg"></span></div>`;
+  $("blocksMode").classList.remove("hidden");
+  const ed = CodfishBlocks.mount($("blocksEd"), { state: structuredClone(p.blocks), rules: p.variant || "standard", onChange: (st, r, c) => blocksSide(c) });
+  $("cancelBtn").onclick = () => renderProof();
+  $("asLean").onclick = () => showEdit(true);
+  $("saveBtn").onclick = async () => {
+    $("saveBtn").disabled = true;
+    try {
+      current = await call("PUT", `/api/proofs/${p.id}`, { title: $("ptitle").value, source: ed.compile().lean + "\n", blocks: ed.get().state });
+      await runAnalysis(p.id);
+    } catch (err) { $("newMsg").className = "msg err"; $("newMsg").textContent = err.message; $("saveBtn").disabled = false; }
+  };
+}
+
+function showEdit(byHand) {
+  const p = current;
+  if (p.blocks && !byHand) return showEditBlocks();
   $("main").innerHTML = `<h2 style="margin:0">Edit</h2>
     <label for="ptitle">Title</label><input id="ptitle" type="text" maxlength="120" value="${esc(p.title)}">
+    ${p.blocks ? `<p class="hint">Editing the Lean by hand turns this into a plain Lean proof: the blocks won't follow your changes.</p>` : ""}
     <label for="psrc">${p.kind === "lean" ? "Lean file" : "Sketch"}</label><textarea id="psrc" spellcheck="false">${esc(p.source)}</textarea>
     <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><button class="btn" id="cancelBtn">Cancel</button><span class="msg" id="newMsg"></span></div>`;
   $("cancelBtn").onclick = () => renderProof();
@@ -366,33 +440,7 @@ function renderBar(steps) {
 }
 
 function renderTree(steps) {
-  const nodeW = 150, nodeH = 38, gapX = 14, gapY = 78;
-  const kids = id => steps.filter(s => s.parent === id);
-  const roots = steps.filter(s => s.parent === null);
-  const pos = {}; let leaf = 0, maxDepth = 0;
-  const place = (s, d) => {
-    maxDepth = Math.max(maxDepth, d);
-    const ks = kids(s.id);
-    if (!ks.length) { pos[s.id] = { x: leaf++ * (nodeW + gapX) + nodeW / 2, y: d * gapY + nodeH / 2 + 6 }; return; }
-    ks.forEach(k => place(k, d + 1));
-    pos[s.id] = { x: (pos[ks[0].id].x + pos[ks[ks.length - 1].id].x) / 2, y: d * gapY + nodeH / 2 + 6 };
-  };
-  roots.forEach(r => place(r, 0));
-  const W = Math.max(leaf * (nodeW + gapX), nodeW + 20), H = (maxDepth + 1) * gapY;
-  const clip = s => s.length > 22 ? s.slice(0, 21) + "…" : s;
-  const edges = steps.filter(s => s.parent !== null && pos[s.parent]).map(s => {
-    const a = pos[s.parent], b = pos[s.id], my = (a.y + b.y) / 2;
-    return `<path d="M${a.x} ${a.y + nodeH / 2} C${a.x} ${my},${b.x} ${my},${b.x} ${b.y - nodeH / 2}" fill="none" stroke="${COLORS[s.eff].fg}" stroke-width="${s.eff === "green" ? 5 : 2.5}" stroke-linecap="round" opacity=".55"/>`;
-  }).join("");
-  const nodes = steps.map(s => {
-    const p = pos[s.id]; if (!p) return "";
-    const c = COLORS[s.eff];
-    return `<g class="node ${selected === s.id ? "sel" : ""}" data-id="${s.id}" tabindex="0" role="button" aria-label="Step ${s.id}: ${esc(s.short)}, ${c.word}">
-      <rect x="${p.x - nodeW / 2}" y="${p.y - nodeH / 2}" width="${nodeW}" height="${nodeH}" rx="9" fill="${c.bg}" stroke="${c.fg}"/>
-      <text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${GLYPH[s.eff]} ${esc(clip(s.short))}</text></g>`;
-  }).join("");
-  $("tree").innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:max(100%, ${W}px);height:${H}px" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Proof tree">${edges}${nodes}</svg>`;
-  document.querySelectorAll(".node").forEach(g => { const pick = () => select(+g.dataset.id); g.onclick = pick; g.onkeydown = e => (e.key === "Enter" || e.key === " ") && pick(); });
+  CodfishBonsai.draw($("tree"), current.analysis.steps, { selected, onSelect: id => select(id, true) });
 }
 
 function renderMoves(steps) {
@@ -406,8 +454,9 @@ function renderMoves(steps) {
   document.querySelectorAll(".move").forEach(m => m.onclick = () => select(+m.dataset.id));
 }
 
-function select(id) {
-  selected = selected === id ? null : id;
+function select(id, fromTree) {
+  // Tapping a folded limb in the tree opens it and selects it; tapping the same step again elsewhere deselects.
+  selected = selected === id && !fromTree ? null : id;
   const steps = settle(current.analysis.steps);
   renderTree(steps); renderMoves(steps);
   document.querySelector(`.move[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
