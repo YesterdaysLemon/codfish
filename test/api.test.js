@@ -25,14 +25,14 @@ sqlite.exec("PRAGMA foreign_keys = ON");
 sqlite.exec(readFileSync(new URL("../schema.sql", import.meta.url), "utf8"));
 
 const sent = [];
-let aiCalls = 0;
+let aiCalls = 0, lastAI = null;
 const env = {
   DB: d1(sqlite),
   SECRET: "test-secret-0123456789abcdef0123456789abcdef",
   ADMIN_EMAILS: "owner@example.com",
   HOUSE_DAILY_NEURONS_CAP: "1000",
   EMAIL: { send: async m => { sent.push(m); return { messageId: "m" + sent.length }; } },
-  AI: { run: async () => { aiCalls++; return { response: { title: "t", steps: [
+  AI: { run: async (model, input) => { aiCalls++; lastAI = input; return { response: { title: "t", steps: [
     { id: 1, parent: null, short: "main", text: "Main claim", lean: "theorem x : True", status: "unchecked", note: "" },
     { id: 2, parent: 1, short: "gap", text: "Clearly", lean: "", status: "gap", note: "needs n > 0" },
   ] }, usage: { neurons: 400 } }; } },
@@ -61,6 +61,8 @@ const test = (name, fn) => tests.push([name, fn]);
 test("pages are served", async () => {
   assert.match((await req("GET", "/")).body, /Codfish/);
   assert.match((await req("GET", "/app")).body, /Sign in to Codfish/);
+  assert.match((await req("GET", "/daily")).body, /Lemma of the Day/);
+  assert.match((await req("GET", "/blocks")).body, /Blocks/);
   assert.equal((await req("GET", "/nope")).status, 404);
 });
 
@@ -146,12 +148,53 @@ test("house model with credit: charged at cost x markup + 1 cent, never green", 
   assert.deepEqual(ledger.map(r => r.delta_micro), [-15720]);
 });
 
+test("variants: rules are stored, change clears the analysis, and reach the model", async () => {
+  const me = await req("GET", "/api/me", null, alice);
+  assert.deepEqual(Object.keys(me.body.variants), ["standard", "sheep", "trivial", "constructive"]);
+  const p = await req("POST", "/api/proofs", { title: "1+1=3", kind: "sketch", source: "1 + 1 = 3 because two sheep make a lamb.", variant: "sheep" }, alice);
+  assert.equal(p.status, 201);
+  assert.equal(p.body.variant, "sheep");
+  const a = await req("POST", `/api/proofs/${p.body.id}/analyze`, null, alice);
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.equal(a.body.analysis.variant, "sheep");
+  assert.match(lastAI.messages[0].content, /RULES IN FORCE: Sheep/);
+  assert.ok(!a.body.analysis.steps.some(s => s.status === "green"), "model output is never green, whatever the rules");
+  // Keep the global neuron count where the cap test expects it.
+  sqlite.prepare("UPDATE usage SET neurons = neurons - 400 WHERE user_id = '*'").run();
+  const list = await req("GET", "/api/proofs", null, alice);
+  assert.equal(list.body.find(x => x.id === p.body.id).variant, "sheep");
+  // Switching rules keeps the source and title but drops the stale analysis.
+  const u = await req("PUT", `/api/proofs/${p.body.id}`, { variant: "trivial" }, alice);
+  assert.equal(u.status, 200, JSON.stringify(u.body));
+  assert.equal(u.body.variant, "trivial");
+  assert.equal(u.body.title, "1+1=3");
+  assert.equal(u.body.analysis, null);
+  // Unknown rules fall back to standard; a title-only edit keeps the rules.
+  assert.equal((await req("PUT", `/api/proofs/${p.body.id}`, { variant: "<script>" }, alice)).body.variant, "standard");
+  await req("PUT", `/api/proofs/${p.body.id}`, { variant: "sheep" }, alice);
+  assert.equal((await req("PUT", `/api/proofs/${p.body.id}`, { title: "renamed" }, alice)).body.variant, "sheep");
+  assert.equal((await req("POST", "/api/proofs", { title: "x", kind: "lean", source: "theorem t : True := trivial" }, alice)).body.variant, "standard");
+});
+
+test("Lemma of the Day: results saved once per day, checked, private", async () => {
+  assert.deepEqual((await req("GET", "/api/daily", null, alice)).body.results, []);
+  assert.equal((await req("POST", "/api/daily", { day: 1, solved: true, tries: 2, seconds: 41 }, alice)).status, 200);
+  // The first answer stands.
+  await req("POST", "/api/daily", { day: 1, solved: true, tries: 1, seconds: 5 }, alice);
+  assert.deepEqual((await req("GET", "/api/daily", null, alice)).body.results, [{ day: 1, solved: true, tries: 2, seconds: 41 }]);
+  assert.equal((await req("POST", "/api/daily", { day: 0, solved: true, tries: 1, seconds: 1 }, alice)).status, 400);
+  assert.equal((await req("POST", "/api/daily", { day: 9999, solved: true, tries: 1, seconds: 1 }, alice)).status, 400, "no future days");
+  assert.equal((await req("POST", "/api/daily", { day: 1, solved: true, tries: 4, seconds: 1 }, alice)).status, 400);
+  assert.equal((await req("GET", "/api/daily")).status, 401);
+});
+
 test("other users can't see or touch your proofs", async () => {
   bobCookie = await signIn("bob2@example.com", "5.5.5.5");
   assert.equal((await req("GET", `/api/proofs/${aliceLean}`, null, bobCookie)).status, 404);
   assert.equal((await req("DELETE", `/api/proofs/${aliceLean}`, null, bobCookie)).status, 404);
   assert.equal((await req("POST", `/api/proofs/${aliceLean}/analyze`, null, bobCookie)).status, 404);
   assert.deepEqual((await req("GET", "/api/proofs", null, bobCookie)).body, []);
+  assert.deepEqual((await req("GET", "/api/daily", null, bobCookie)).body.results, []);
 });
 
 test("own API key: stored encrypted, used, never charged", async () => {
@@ -202,6 +245,7 @@ test("sign out ends the session; deleting the account removes everything", async
   assert.equal((await req("DELETE", "/api/me", null, alice)).status, 200);
   const left = sqlite.prepare("SELECT (SELECT COUNT(*) FROM proofs p JOIN users u ON u.id = p.user_id WHERE u.email = 'alice@example.com') + (SELECT COUNT(*) FROM users WHERE email = 'alice@example.com') AS n").get();
   assert.equal(left.n, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM daily_results").get().n, 0);
   assert.equal((await req("GET", "/api/me", null, alice)).status, 401);
 });
 

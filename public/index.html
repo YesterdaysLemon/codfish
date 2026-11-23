@@ -50,6 +50,9 @@
   .best b { font-family: var(--mono); font-size: 12px; letter-spacing: .5px; }
   .best button { margin-top: 6px; font: 600 13px var(--sans); padding: 5px 12px; border-radius: 8px; border: 0;
     background: var(--green); color: #fff; cursor: pointer; }
+  .hidden { display: none !important; }
+  .controls .lbl { font: 600 12px var(--mono); color: var(--quiet); text-transform: uppercase; letter-spacing: .06em; align-self: center; }
+  .rulesnote { font-size: 13.5px; color: var(--quiet); align-self: center; }
   footer { padding: 0 22px 28px; color: var(--quiet); font-size: 13px; }
   footer a { color: inherit; }
 </style>
@@ -58,17 +61,18 @@
 <header>
   <h1 id="name"><span class="fish">🐟</span> <span id="nameText">Codfish</span></h1>
   <span class="tag" id="tag">an analysis board for proofs</span>
-  <span class="open"><span id="lookPick"></span> <a href="/app">Open your workspace →</a></span>
+  <span class="open"><span id="lookPick"></span> <a href="/daily">Lemma of the Day</a> <a href="/blocks">Blocks</a> <a href="/app">Open your workspace →</a></span>
 </header>
 <div class="controls" id="demos" role="group" aria-label="Demo proofs"></div>
+<div class="controls hidden" id="rules" role="group" aria-label="Rules"></div>
 <main>
   <div class="panel" id="bar" aria-label="Eval bar"></div>
   <div class="panel" id="board"></div>
   <div class="panel" id="moves"></div>
 </main>
 <footer>
-  Demo board. The colours, notes and best moves are precomputed for these three proofs; the live engine (Lean checks,
-  counterexample search) isn't wired up yet. To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
+  Demo board. The colours, notes and best moves are precomputed for these demo proofs; the live engine (Lean checks,
+  counterexample search) isn't wired up yet. The 1 + 1 = 3 board shows variants: the same claim under different rules. To drop in your own Lean file or sketch, <a href="/app">open the workspace</a>. Lean statements are illustrative. The name follows the board:
   <b>Codfish</b> by default, <b>Proofish</b> while steps are still yellow, <b>Lemmafish</b> once every step is green. Pick a look at the top right.
 </footer>
 
@@ -166,9 +170,31 @@ const DEMOS = [
         status: "green", note: "Follows from step 4 and step 2." },
     ],
   },
+  {
+    id: "sheep", title: "1 + 1 = 3",
+    rules: {
+      standard: { label: "Standard", note: "Ordinary arithmetic.", steps: [
+        { id: 1, parent: null, short: "1 + 1 = 3", text: "1 + 1 = 3.", lean: "example : (1 : ℤ) + 1 = 3", status: "red", note: "" },
+        { id: 2, parent: 1, short: "1 + 1 = 2", text: "Counting: 1 + 1 = 2.", lean: "example : (1 : ℤ) + 1 = 2 := by norm_num", status: "green", note: "norm_num closes it." },
+        { id: 3, parent: 1, short: "2 = 3", text: "So 2 = 3.", lean: "example : (2 : ℤ) = 3", status: "red",
+          note: "Counterexample: 2 ≠ 3, and norm_num proves it. Not a slip in the argument: under these rules the claim is false. Try the Sheep rules." },
+      ] },
+      sheep: { label: "Sheep", note: "Addition is breeding: x ⊕ y = x + y + 1. Two sheep make a lamb.", steps: [
+        { id: 1, parent: null, short: "1 ⊕ 1 = 3", text: "1 ⊕ 1 = 3.", lean: "example : breed 1 1 = 3 := by norm_num [breed]", status: "red", note: "" },
+        { id: 2, parent: 1, short: "x ⊕ y = x + y + 1", text: "The rule: x ⊕ y = x + y + 1, on the integers.", lean: "def breed (x y : ℤ) : ℤ := x + y + 1", status: "green", note: "A definition: nothing to prove." },
+        { id: 3, parent: 1, short: "1 ⊕ 1 = 1 + 1 + 1", text: "Unfold the rule: 1 ⊕ 1 = 1 + 1 + 1.", lean: "example : breed 1 1 = 1 + 1 + 1 := rfl", status: "green", note: "True by definition (rfl)." },
+        { id: 4, parent: 1, short: "1 + 1 + 1 = 3", text: "And 1 + 1 + 1 = 3.", lean: "example : (1 : ℤ) + 1 + 1 = 3 := by norm_num", status: "green", note: "norm_num closes it." },
+      ] },
+      trivial: { label: "Trivial ring", note: "A ring where 0 = 1, so every element is the same element.", steps: [
+        { id: 1, parent: null, short: "1 + 1 = 3", text: "1 + 1 = 3 in a ring R where 0 = 1.", lean: "example {R : Type} [CommRing R] [Subsingleton R] : (1 : R) + 1 = 3", status: "red", note: "" },
+        { id: 2, parent: 1, short: "R has one element", text: "R is a subsingleton: any two elements are equal.", lean: "[Subsingleton R]", status: "green", note: "A hypothesis: that's what the trivial ring means." },
+        { id: 3, parent: 1, short: "so 1 + 1 = 3", text: "So 1 + 1 and 3 are equal, like everything else.", lean: "exact Subsingleton.elim _ _", status: "green", note: "One line. Every equation holds here, which is why nobody does arithmetic in the trivial ring." },
+      ] },
+    },
+  },
 ];
 
-let demo, steps, selected = null;
+let demo, steps, selected = null, rule = null;
 
 function nameFor(st) {
   const s = st.map(x => x.status);
@@ -179,8 +205,19 @@ function nameFor(st) {
 const TAGS = { Codfish: "an analysis board for proofs", Proofish: "proof-ish: plausible, not settled",
                Lemmafish: "proved. it's a lemma now." };
 
-function load(d) {
-  demo = d; steps = structuredClone(d.steps); selected = null;
+function load(d, r) {
+  demo = d; selected = null;
+  const rb = document.getElementById("rules");
+  if (d.rules) {
+    rule = r || "standard";
+    steps = structuredClone(d.rules[rule].steps);
+    rb.classList.remove("hidden");
+    rb.innerHTML = `<span class="lbl">Rules</span>` + Object.entries(d.rules).map(([k, v]) =>
+      `<button data-rule="${k}" aria-pressed="${k === rule}">${v.label}</button>`).join("") + `<span class="rulesnote">${d.rules[rule].note}</span>`;
+    rb.querySelectorAll("button").forEach(b => b.onclick = () => load(d, b.dataset.rule));
+  } else {
+    rule = null; steps = structuredClone(d.steps); rb.classList.add("hidden");
+  }
   document.querySelectorAll("#demos button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === d.id));
   render();
 }

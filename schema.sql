@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS proofs (
   kind        TEXT NOT NULL CHECK (kind IN ('lean', 'sketch')),
   source      TEXT NOT NULL,
   analysis    TEXT,
+  variant     TEXT NOT NULL DEFAULT 'standard',
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -71,3 +72,14 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS credit_ledger_user ON credit_ledger(user_id, created_at DESC);
+
+-- Lemma of the Day: one result per user per puzzle day. The first answer stands.
+CREATE TABLE IF NOT EXISTS daily_results (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day         INTEGER NOT NULL,
+  solved      INTEGER NOT NULL,
+  tries       INTEGER NOT NULL,
+  seconds     INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, day)
+);

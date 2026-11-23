@@ -43,6 +43,21 @@ Rules:
 - Otherwise use "unchecked". Never claim a step is verified: only Lean can do that.
 - Keep the tree faithful to the sketch. Do not add a proof the author didn't give; flag missing pieces as gaps instead.`;
 
+// Variants: the same board under different rules. The model is told which rules are in force.
+export const VARIANTS = {
+  standard: { label: "Standard", blurb: "Ordinary mathematics.", prompt: "" },
+  sheep: { label: "Sheep", blurb: "Addition is breeding: x ⊕ y = x + y + 1, so 1 ⊕ 1 = 3.",
+    preamble: "def breed (x y : ℤ) : ℤ := x + y + 1",
+    prompt: "\n\nRULES IN FORCE: Sheep arithmetic. Wherever the sketch writes +, read it as breeding: x ⊕ y = x + y + 1 on the integers. So 1 + 1 = 3 is TRUE here. (⊕ is associative and commutative, with identity −1; the inverse of x is −x − 2.) Judge every step under these rules, not ordinary arithmetic. In \"lean\", write breed x y for x ⊕ y, where def breed (x y : ℤ) : ℤ := x + y + 1." },
+  trivial: { label: "Trivial ring", blurb: "Everything equals 0, so every equation holds.",
+    preamble: "variable {R : Type} [CommRing R] [Subsingleton R]",
+    prompt: "\n\nRULES IN FORCE: the trivial ring, where 0 = 1 and every element equals every other. Every equation between elements holds. Judge every step under these rules. In \"lean\", work in a commutative ring R with [Subsingleton R]." },
+  constructive: { label: "Constructive", blurb: "No excluded middle: a proof by contradiction doesn't show something exists.",
+    prompt: "\n\nRULES IN FORCE: constructive logic. The law of excluded middle and double-negation elimination are not available. A step that proves existence or a disjunction by contradiction, or uses 'either P or not P' on an undecidable P, is a gap: mark it \"gap\" and say which classical principle it needs." },
+};
+export const variantOf = v => (VARIANTS[v] ? v : "standard");
+const promptFor = v => SYSTEM_PROMPT + VARIANTS[variantOf(v)].prompt;
+
 const STATUS = { unchecked: "unchecked", gap: "yellow", counterexample: "red" };
 
 export function parseModelTree(raw) {
@@ -85,16 +100,16 @@ export function parseModelTree(raw) {
   return { title: String(obj.title || "").slice(0, 120), steps };
 }
 
-export async function runHouse(env, sketch) {
+export async function runHouse(env, sketch, variant) {
   const res = await env.AI.run(HOUSE_MODEL, {
-    messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: sketch }],
+    messages: [{ role: "system", content: promptFor(variant) }, { role: "user", content: sketch }],
     max_tokens: 3000,
   });
   const out = res.response ?? res.choices?.[0]?.message?.content;
   return { output: out, neurons: Number(res.usage?.neurons) || 0, model: HOUSE_MODEL };
 }
 
-export async function runOwn(provider, apiKey, model, baseOverride, sketch) {
+export async function runOwn(provider, apiKey, model, baseOverride, sketch, variant) {
   const p = PROVIDERS[provider];
   if (!p) throw new Error("Unknown provider.");
   const base = provider === "custom" ? baseOverride : p.base;
@@ -106,7 +121,7 @@ export async function runOwn(provider, apiKey, model, baseOverride, sketch) {
     r = await fetch(`${base}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: m, max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: "user", content: sketch }] }),
+      body: JSON.stringify({ model: m, max_tokens: 4000, system: promptFor(variant), messages: [{ role: "user", content: sketch }] }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`${p.label}: ${j.error?.message || r.status}`);
@@ -115,7 +130,7 @@ export async function runOwn(provider, apiKey, model, baseOverride, sketch) {
     r = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: m, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: sketch }] }),
+      body: JSON.stringify({ model: m, messages: [{ role: "system", content: promptFor(variant) }, { role: "user", content: sketch }] }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`${p.label}: ${j.error?.message || j.message || r.status}`);

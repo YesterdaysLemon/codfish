@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lemma of the Day · Codfish</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐟</text></svg>">
+<link rel="stylesheet" href="/themes.css">
+<script src="/themes.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); }
+  a { color: inherit; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font: 700 22px/1 var(--display); }
+  .spacer { flex: 1; }
+  .links { display: flex; gap: 12px; align-items: center; font-size: 14px; flex-wrap: wrap; }
+  main { max-width: 560px; margin: 0 auto; padding: 22px 18px 60px; }
+  .eyebrow { font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); margin: 0; }
+  h2 { margin: 6px 0 4px; font: 700 26px/1.2 var(--display); }
+  .hint { color: var(--quiet); font-size: 15px; margin: 0 0 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .step { display: flex; gap: 12px; align-items: baseline; width: 100%; text-align: left; padding: 13px 14px; border: 0;
+    border-top: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; }
+  .step:first-child { border-top: 0; }
+  button.step { cursor: pointer; min-height: 48px; }
+  button.step:hover { background: var(--bg); }
+  .step .n { font: 600 12px var(--mono); color: var(--quiet); min-width: 18px; }
+  .step .g { font-family: var(--mono); font-weight: 600; min-width: 14px; }
+  .step.gap { background: var(--yellow-bg); }
+  .step.wrong { background: var(--grey-bg); color: var(--quiet); text-decoration: line-through; }
+  .step.right { background: var(--red-bg); }
+  .label { font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--quiet); margin: 22px 0 8px; }
+  .opts { display: flex; flex-direction: column; gap: 8px; }
+  .opt { text-align: left; background: var(--panel); color: var(--ink); border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 13px 14px; font: inherit; cursor: pointer; min-height: 48px; }
+  .opt:hover { border-color: var(--ink); }
+  .opt.wrong { color: var(--quiet); text-decoration: line-through; cursor: default; }
+  /* Right answers are marked in ink, not green: only Lean paints green. */
+  .opt.right { border: 2.5px solid var(--ink); font-weight: 600; }
+  .step .because { display: block; color: var(--quiet); font-size: 14px; }
+  .strikes { display: flex; gap: 6px; align-items: center; font: 13px var(--mono); color: var(--quiet); margin-top: 14px; }
+  .sq { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); display: inline-flex; align-items: center;
+    justify-content: center; font: 600 13px var(--mono); }
+  .sq.x { background: var(--red); border-color: var(--red); color: var(--bg); }
+  .sq.ok { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .result { margin-top: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .big { font: 700 30px/1.1 var(--display); margin: 0; }
+  .explain { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .share { font: 14px/1.6 var(--mono); white-space: pre-line; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .btn { font: 600 15px var(--mono); padding: 13px 16px; border-radius: 12px; border: 0; background: var(--ink); color: var(--bg); cursor: pointer; }
+  .btn.quiet { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .streak { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .streak span { height: 24px; border-radius: 6px; background: var(--grey-bg); border: 1px solid var(--line); }
+  .streak .solved { background: var(--ink); border-color: var(--ink); }
+  .streak .missed { background: var(--red-bg); border-color: var(--red); }
+  .streak .today { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .foot { color: var(--quiet); font-size: 13px; margin-top: 26px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span aria-hidden="true">🐟</span> <span id="nameText">Codfish</span></h1>
+  <span class="spacer"></span>
+  <nav class="links"><span id="lookPick"></span><a href="/">Board</a><a href="/blocks">Blocks</a><a href="/app">Workspace</a></nav>
+</header>
+<main>
+  <p class="eyebrow" id="eyebrow">Lemma of the Day</p>
+  <h2 id="title"></h2>
+  <p class="hint" id="hint"></p>
+  <div class="card" id="steps"></div>
+  <div id="optsWrap" class="hidden"><div class="label">Your move</div><div class="opts" id="opts"></div></div>
+  <div class="strikes" id="strikes" aria-live="polite"></div>
+  <section class="result hidden" id="result" aria-live="polite">
+    <p class="big" id="verdict"></p>
+    <div class="explain" id="explain"></div>
+    <div><div class="label">Share it, no spoilers</div><div class="share" id="shareText"></div></div>
+    <div class="row"><button class="btn" id="shareBtn">Share</button><a class="btn quiet" href="/blocks" style="text-decoration:none">Try Blocks</a></div>
+    <div><div class="label" id="streakLabel">Streak</div><div class="streak" id="streak"></div></div>
+    <p class="hint" id="next"></p>
+  </section>
+  <p class="foot">One puzzle a day, the same for everyone. Puzzles are checked by hand until the Lean engine is connected; then Lean checks every answer.</p>
+</main>
+
+<script>
+// The bank: "blunder" = tap the first wrong step; "gap" = pick the move that justifies the yellow step.
+const BANK = [
+  { type: "gap", title: "The square of an odd number is odd",
+    steps: ["Let n be odd, so n = 2k + 1 for some integer k.", "Then n² = 4k² + 4k + 1.", { gap: "So n² is odd." }],
+    options: ["n² = 2(2k² + 2k) + 1", "n² is a perfect square", "n² is greater than n", "k is an integer"], answer: 0,
+    explain: "Odd means 2 × (an integer) + 1, and 2(2k² + 2k) + 1 has exactly that shape. The other three don't say anything about odd or even." },
+  { type: "blunder", title: "There are infinitely many primes",
+    steps: ["Suppose the primes are a finite list p₁, …, pₙ.", "Let N = p₁ ⋯ pₙ + 1.", "No pᵢ divides N, since each leaves remainder 1.", "So N is prime.", "N is bigger than every pᵢ, so it's a prime missing from the list. Contradiction."], answer: 3,
+    explain: "N needn't be prime: 2·3·5·7·11·13 + 1 = 30031 = 59 × 509. What's true is that N has a prime factor, and that factor can't be on the list. The theorem holds; this step doesn't." },
+  { type: "blunder", title: "1 = 2",
+    steps: ["Let a = b.", "Multiply both sides by a: a² = ab.", "Subtract b²: a² − b² = ab − b².", "Factor: (a + b)(a − b) = b(a − b).", "Cancel (a − b): a + b = b.", "Take a = b = 1: then 2 = 1."], answer: 4,
+    explain: "a − b = 0, so cancelling it divides by zero. Every step before that one is fine." },
+  { type: "gap", title: "The sum of two even numbers is even",
+    steps: ["Let a and b be even: a = 2m and b = 2n.", { gap: "So a + b is even." }],
+    options: ["a + b = 2(m + n)", "a + b is bigger than a", "m + n is an integer", "a and b are both divisible by 1"], answer: 0,
+    explain: "Even means 2 × (an integer). Writing a + b = 2(m + n) shows it directly. 'm + n is an integer' is part of the argument, but only once the 2 is out in front." },
+  { type: "blunder", title: "All horses are the same colour",
+    steps: ["Base case: one horse is the same colour as itself.", "Assume any group of n horses is all one colour.", "Take n + 1 horses. Leave out the first: the other n are one colour.", "Leave out the last instead: those n are one colour too.", "The two groups overlap, so all n + 1 share one colour."], answer: 4,
+    explain: "When n + 1 = 2 the two groups are {horse 2} and {horse 1}. They don't overlap, so nothing ties their colours together. The induction step fails right there, so the chain never gets started." },
+  { type: "gap", title: "There are infinitely many primes (the careful way)",
+    steps: ["Suppose the primes are a finite list p₁, …, pₙ.", "Let N = p₁ ⋯ pₙ + 1.", { gap: "N has a prime factor p." }, "p can't be any pᵢ: it would divide both N and the product, so it would divide 1.", "So p is a prime missing from the list. Contradiction."],
+    options: ["N ≥ 2, and every whole number ≥ 2 has a prime factor", "N is prime", "N is odd", "N is bigger than every pᵢ"], answer: 0,
+    explain: "The product is at least 1, so N ≥ 2, and every number from 2 up has a prime factor. 'N is prime' would also hand you a factor, but it's false: 30031 = 59 × 509." },
+  { type: "blunder", title: "−1 = 1",
+    steps: ["1 = √1", "√1 = √((−1)(−1))", "√((−1)(−1)) = √(−1) · √(−1)", "√(−1) · √(−1) = i · i = −1", "So 1 = −1."], answer: 2,
+    explain: "√(xy) = √x · √y only holds when x and y are both non-negative. Here both are −1, so that rule doesn't apply." },
+  { type: "gap", title: "√2 is irrational",
+    steps: ["Suppose √2 = p/q with whole numbers p and q, not both even.", "Squaring: p² = 2q², so p² is even.", { gap: "So p is even." }, "Write p = 2k. Then 4k² = 2q², so q² = 2k² and q is even too.", "Both even contradicts how we chose p and q."],
+    options: ["If p were odd, p² would be odd", "p² is divisible by 4", "p is bigger than 1", "q isn't zero"], answer: 0,
+    explain: "An odd number squared is odd, since (2k + 1)² = 2(2k² + 2k) + 1. So an even square must come from an even number. 'p² is divisible by 4' only follows once you know p is even, so it would be circular here." },
+  { type: "blunder", title: "If a < b, then a² < b²",
+    steps: ["Start from a < b.", "Multiply both sides by a: a² < ab.", "Multiply both sides by b: ab < b².", "Chain them: a² < b²."], answer: 1,
+    explain: "Multiplying an inequality by a negative number flips it. With a = −2 and b = 1: a < b, but a² = 4 is bigger than ab = −2. (The next step has the same problem when b is negative, and the claim itself is false.)" },
+  { type: "gap", title: "6 divides n³ − n",
+    steps: ["n³ − n = (n − 1) · n · (n + 1).", "That's three consecutive integers.", { gap: "So 6 divides n³ − n." }],
+    options: ["Among three consecutive integers, one is even and one is a multiple of 3", "6 = 2 × 3", "n³ is bigger than n", "n − 1, n and n + 1 are all different"], answer: 0,
+    explain: "Divisible by 2 and by 3 means divisible by 6, because 2 and 3 share no factor, and three consecutive integers always include an even one and a multiple of 3. '6 = 2 × 3' is true but says nothing about these numbers." },
+  { type: "blunder", title: "Every prime is odd",
+    steps: ["Let p be a prime.", "If p were even, 2 would divide p.", "Then p would have a divisor other than 1 and itself.", "So every prime is odd."], answer: 2,
+    explain: "If p = 2, the divisor 2 is p itself. The step forgets that 2 is prime, and 2 is even." },
+  { type: "gap", title: "Among any 13 people, two share a birth month",
+    steps: ["There are 12 months.", { gap: "So two of the 13 people share a month." }],
+    options: ["Put each person in their month: 13 people in 12 months means some month gets two", "Most months have 30 or 31 days", "13 is a prime number", "Some people are born in the same year"], answer: 0,
+    explain: "The pigeonhole principle: more pigeons than holes means some hole holds two." },
+  { type: "blunder", title: "1 + 2 + … + n = n(n + 1)/2",
+    steps: ["Base case: for n = 1, both sides are 1.", "Assume 1 + … + n = n(n + 1)/2.", "Add n + 1 to both sides: 1 + … + (n + 1) = n(n + 1)/2 + (n + 1).", "Simplify: that's (n² + 2n + 1)/2.", "That's (n + 1)²/2, the formula for n + 1."], answer: 3,
+    explain: "n(n + 1)/2 + (n + 1) = (n² + 3n + 2)/2 = (n + 1)(n + 2)/2. The slip loses an n + 1. Check n = 1: 1 + 2 = 3, but (1 + 2 + 1)/2 = 2. The formula is true; this algebra isn't." },
+  { type: "gap", title: "The product of two odd numbers is odd",
+    steps: ["Let a = 2m + 1 and b = 2n + 1.", "Then ab = 4mn + 2m + 2n + 1.", { gap: "So ab is odd." }],
+    options: ["ab = 2(2mn + m + n) + 1", "4mn is even", "ab is bigger than a", "m and n are integers"], answer: 0,
+    explain: "Pull a 2 out of everything but the 1, and you have 2 × (an integer) + 1. '4mn is even' covers only one of the terms." },
+];
+
+const START = [2026, 10, 23]; // 23 Nov 2026, puzzle #1
+const $ = id => document.getElementById(id);
+const dayNumber = () => {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.floor((today - Date.UTC(...START)) / 86_400_000) + 1;
+};
+const DAY = Math.max(1, dayNumber());
+const P = BANK[(DAY - 1) % BANK.length];
+const KEY = "codfish-daily";
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+let history = {};
+try { history = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+const saveLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(history)); } catch (e) {} };
+
+let signedIn = false;
+async function api(method, path, data) {
+  const r = await fetch(path, { method, headers: data ? { "content-type": "application/json" } : {}, body: data ? JSON.stringify(data) : undefined });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+let tries = [], done = false, started = Date.now();
+
+function setName(n) { $("nameText").textContent = n; document.title = `Lemma of the Day · ${n}`; }
+
+function render() {
+  $("eyebrow").textContent = `Lemma of the Day · #${DAY}`;
+  $("title").textContent = P.title;
+  $("hint").textContent = P.type === "blunder" ? "Tap the first step that's wrong." : "One step is yellow. Pick the move that justifies it.";
+  const wrongPicks = new Set(tries.filter(t => !t.ok).map(t => t.pick));
+  const solvedPick = tries.find(t => t.ok)?.pick;
+  if (P.type === "blunder") {
+    $("steps").innerHTML = P.steps.map((s, i) => {
+      const cls = i === solvedPick || (done && i === P.answer) ? "right" : wrongPicks.has(i) ? "wrong" : "";
+      const g = cls === "right" ? "✗" : cls === "wrong" ? "·" : "";
+      const tag = done || wrongPicks.has(i) ? "div" : "button";
+      return `<${tag} class="step ${cls}" data-i="${i}"><span class="n">${i + 1}</span><span class="g" style="color:var(--red)">${g}</span><span>${s}</span></${tag}>`;
+    }).join("");
+    document.querySelectorAll("button.step").forEach(b => b.onclick = () => pick(+b.dataset.i));
+  } else {
+    const filled = done && tries.some(t => t.ok);
+    $("steps").innerHTML = P.steps.map((s, i) => {
+      const isGap = typeof s === "object";
+      const text = isGap ? s.gap : s;
+      // Given steps are written, not Lean-checked: a quiet dot, never a green tick.
+      const g = isGap && !filled ? `<span class="g" style="color:var(--yellow)">?</span>` : `<span class="g" style="color:var(--quiet)">·</span>`;
+      const because = isGap && filled ? `<span class="because">because ${P.options[P.answer]}</span>` : "";
+      return `<div class="step ${isGap && !filled ? "gap" : ""}"><span class="n">${i + 1}</span>${g}<span>${text}${because}</span></div>`;
+    }).join("");
+    $("optsWrap").classList.remove("hidden");
+    $("opts").innerHTML = P.options.map((o, i) => {
+      const cls = i === solvedPick || (done && i === P.answer) ? "right" : wrongPicks.has(i) ? "wrong" : "";
+      return `<button class="opt ${cls}" data-i="${i}" ${done || wrongPicks.has(i) ? "disabled" : ""}>${cls === "right" ? "✓ " : ""}${o}</button>`;
+    }).join("");
+    document.querySelectorAll(".opt:not([disabled])").forEach(b => b.onclick = () => pick(+b.dataset.i));
+  }
+  const left = 3 - tries.filter(t => !t.ok).length;
+  $("strikes").innerHTML = done ? "" : `${[0, 1, 2].map(i => `<span class="sq ${i < 3 - left ? "x" : ""}">${i < 3 - left ? "✗" : ""}</span>`).join("")}<span>${left} ${left === 1 ? "try" : "tries"} left</span>`;
+}
+
+function pick(i) {
+  if (done) return;
+  const ok = i === P.answer;
+  tries.push({ pick: i, ok });
+  if (ok || tries.filter(t => !t.ok).length >= 3) finish(ok);
+  else render();
+}
+
+async function finish(solved, restored) {
+  done = true;
+  const seconds = restored ? restored.seconds : Math.round((Date.now() - started) / 1000);
+  const n = solved ? (tries.length === 1 ? "Lemmafish" : "Proofish") : "Codfish";
+  setName(n);
+  if (!restored) {
+    history[DAY] = { solved, tries: tries.length, seconds, picks: tries.map(t => t.pick) };
+    saveLocal();
+    if (signedIn) api("POST", "/api/daily", { day: DAY, solved, tries: tries.length, seconds }).catch(() => {});
+  }
+  render();
+  $("result").classList.remove("hidden");
+  $("verdict").textContent = solved ? (tries.length === 1 ? "First try. It's a lemma now." : `Got it in ${tries.length}.`) : "Not this time.";
+  $("explain").textContent = P.explain;
+  const marks = tries.map(t => (t.ok ? "✓" : "✗")).join("");
+  const share = `Codfish #${DAY} · ${solved ? (tries.length === 1 ? "first try" : `${tries.length} tries`) : "missed"} · ${fmt(seconds)}\n${marks} ${n}\ncodfish.alirezaafshan.com/daily`;
+  $("shareText").textContent = share;
+  $("shareBtn").onclick = async () => {
+    try {
+      if (navigator.share) await navigator.share({ text: share });
+      else { await navigator.clipboard.writeText(share); $("shareBtn").textContent = "Copied"; }
+    } catch (e) {}
+  };
+  renderStreak();
+  const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const mins = Math.round((next - now) / 60000);
+  $("next").textContent = `Tomorrow's lemma in ${Math.floor(mins / 60)} h ${mins % 60} min.`;
+}
+
+function renderStreak() {
+  let streak = 0;
+  for (let d = DAY; d >= 1; d--) {
+    if (history[d]?.solved) streak++;
+    else if (d === DAY && !history[d]) continue;
+    else break;
+  }
+  $("streakLabel").textContent = `Streak · ${streak} ${streak === 1 ? "day" : "days"}`;
+  const cells = [];
+  for (let d = DAY - 13; d <= DAY; d++) {
+    const h = d >= 1 ? history[d] : null;
+    cells.push(`<span class="${h ? (h.solved ? "solved" : "missed") : ""} ${d === DAY ? "today" : ""}" title="${d >= 1 ? "#" + d : ""}"></span>`);
+  }
+  $("streak").innerHTML = cells.join("");
+}
+
+async function boot() {
+  try {
+    const r = await api("GET", "/api/daily");
+    signedIn = true;
+    for (const x of r.results) if (!history[x.day]) history[x.day] = { solved: !!x.solved, tries: x.tries, seconds: x.seconds, picks: [] };
+    // Results kept only on this device get copied up.
+    for (const [d, h] of Object.entries(history)) if (!r.results.some(x => x.day === +d)) api("POST", "/api/daily", { day: +d, ...h }).catch(() => {});
+    saveLocal();
+  } catch (e) {}
+  const h = history[DAY];
+  if (h) {
+    tries = (h.picks && h.picks.length ? h.picks : Array.from({ length: h.tries }, (_, i) => (i === h.tries - 1 && h.solved ? P.answer : -1)))
+      .map(p => ({ pick: p, ok: p === P.answer }));
+    finish(h.solved, h);
+  } else render();
+}
+
+CodfishTheme.mount($("lookPick"));
+boot();
+</script>
+</body>
+</html>

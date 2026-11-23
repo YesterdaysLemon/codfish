@@ -3,8 +3,10 @@ import DEMO_HTML from "../public/index.html";
 import APP_HTML from "../public/app.html";
 import THEMES_CSS from "../public/themes.css";
 import THEMES_JS from "../public/themes.js.txt";
+import DAILY_HTML from "../public/daily.html";
+import BLOCKS_HTML from "../public/blocks.html";
 import { parseLean } from "./lean.js";
-import { PROVIDERS, HOUSE_MODEL, MAX_CALL_MICRO, houseCharge, parseModelTree, runHouse, runOwn } from "./llm.js";
+import { PROVIDERS, VARIANTS, variantOf, HOUSE_MODEL, MAX_CALL_MICRO, houseCharge, parseModelTree, runHouse, runOwn } from "./llm.js";
 
 const DAY_MS = 86_400_000;
 const SESSION_DAYS = 30;
@@ -196,6 +198,7 @@ async function me(user, env) {
     creditMicro: user.credit_micro,
     today: { calls: use?.calls || 0, chargedMicro: use?.charged_micro || 0 },
     house: { model: HOUSE_MODEL, minCreditMicro: MAX_CALL_MICRO },
+    variants: Object.fromEntries(Object.entries(VARIANTS).map(([k, v]) => [k, { label: v.label, blurb: v.blurb }])),
     providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, { label: v.label, defaultModel: v.defaultModel || "" }])),
   });
 }
@@ -224,7 +227,7 @@ async function putKey(request, user, env, provider) {
 }
 
 async function deleteAccount(user, env) {
-  await env.DB.batch(["proofs", "api_keys", "sessions", "usage", "credit_ledger"].map(t =>
+  await env.DB.batch(["proofs", "api_keys", "sessions", "usage", "credit_ledger", "daily_results"].map(t =>
     env.DB.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(user.id)).concat([
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
   ]));
@@ -233,14 +236,14 @@ async function deleteAccount(user, env) {
 
 // ---------- proofs ----------
 
-const proofOut = r => ({ id: r.id, title: r.title, kind: r.kind, source: r.source, analysis: r.analysis ? JSON.parse(r.analysis) : null, createdAt: r.created_at, updatedAt: r.updated_at });
+const proofOut = r => ({ id: r.id, title: r.title, kind: r.kind, variant: variantOf(r.variant), source: r.source, analysis: r.analysis ? JSON.parse(r.analysis) : null, createdAt: r.created_at, updatedAt: r.updated_at });
 
 async function listProofs(user, env) {
-  const r = await env.DB.prepare("SELECT id, title, kind, analysis, updated_at FROM proofs WHERE user_id = ? ORDER BY updated_at DESC").bind(user.id).all();
+  const r = await env.DB.prepare("SELECT id, title, kind, variant, analysis, updated_at FROM proofs WHERE user_id = ? ORDER BY updated_at DESC").bind(user.id).all();
   return json(r.results.map(p => {
     const steps = p.analysis ? JSON.parse(p.analysis).steps || [] : [];
     const count = c => steps.filter(s => s.status === c).length;
-    return { id: p.id, title: p.title, kind: p.kind, updatedAt: p.updated_at, tally: { green: count("green"), yellow: count("yellow"), red: count("red"), unchecked: count("unchecked"), total: steps.length } };
+    return { id: p.id, title: p.title, kind: p.kind, variant: variantOf(p.variant), updatedAt: p.updated_at, tally: { green: count("green"), yellow: count("yellow"), red: count("red"), unchecked: count("unchecked"), total: steps.length } };
   }));
 }
 
@@ -251,7 +254,8 @@ function validProof(b) {
   const source = String(b.source || "");
   if (!source.trim()) throw new HttpError(400, "The proof is empty.");
   if (source.length > MAX_SOURCE) throw new HttpError(413, "That proof is over 100 KB.");
-  return { title, kind, source };
+  const variant = b.variant === undefined ? undefined : variantOf(b.variant);
+  return { title, kind, source, variant };
 }
 
 async function createProof(request, user, env) {
@@ -259,8 +263,8 @@ async function createProof(request, user, env) {
   const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM proofs WHERE user_id = ?").bind(user.id).first();
   if (n.n >= MAX_PROOFS) throw new HttpError(403, `You can keep up to ${MAX_PROOFS} proofs. Delete some first.`);
   const id = newId(), now = Date.now();
-  await env.DB.prepare("INSERT INTO proofs (id, user_id, title, kind, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, user.id, p.title, p.kind, p.source, now, now).run();
+  await env.DB.prepare("INSERT INTO proofs (id, user_id, title, kind, source, variant, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, user.id, p.title, p.kind, p.source, p.variant || "standard", now, now).run();
   return getProof(user, env, id, 201);
 }
 
@@ -272,12 +276,14 @@ async function getProof(user, env, id, status = 200) {
 
 async function updateProof(request, user, env, id) {
   const b = await body(request);
-  const old = await env.DB.prepare("SELECT kind, source FROM proofs WHERE id = ? AND user_id = ?").bind(id, user.id).first();
+  const old = await env.DB.prepare("SELECT kind, source, title, variant FROM proofs WHERE id = ? AND user_id = ?").bind(id, user.id).first();
   if (!old) throw new HttpError(404, "No such proof.");
-  const p = validProof({ kind: old.kind, ...b });
-  const changed = p.source !== old.source;
-  await env.DB.prepare(`UPDATE proofs SET title = ?, kind = ?, source = ?, updated_at = ?${changed ? ", analysis = NULL" : ""} WHERE id = ? AND user_id = ?`)
-    .bind(p.title, p.kind, p.source, Date.now(), id, user.id).run();
+  const p = validProof({ kind: old.kind, title: old.title, source: old.source, ...b });
+  const variant = p.variant || variantOf(old.variant);
+  // New source or new rules make the old analysis stale.
+  const changed = p.source !== old.source || variant !== variantOf(old.variant);
+  await env.DB.prepare(`UPDATE proofs SET title = ?, kind = ?, source = ?, variant = ?, updated_at = ?${changed ? ", analysis = NULL" : ""} WHERE id = ? AND user_id = ?`)
+    .bind(p.title, p.kind, p.source, variant, Date.now(), id, user.id).run();
   return getProof(user, env, id);
 }
 
@@ -302,7 +308,7 @@ async function analyze(user, env, id) {
   if (p.kind === "lean") {
     const r = parseLean(p.source);
     if (!r.ok) throw new HttpError(422, r.error);
-    analysis = { source: "lean", steps: r.steps, at: Date.now() };
+    analysis = { source: "lean", variant: variantOf(p.variant), steps: r.steps, at: Date.now() };
   } else {
     const s = settingsOf(user);
     if (s.provider === "house") {
@@ -315,7 +321,7 @@ async function analyze(user, env, id) {
       }
       let out;
       try {
-        out = await runHouse(env, p.source);
+        out = await runHouse(env, p.source, p.variant);
       } catch (e) {
         if (!admin) await env.DB.prepare("UPDATE users SET credit_micro = credit_micro + ? WHERE id = ?").bind(MAX_CALL_MICRO, user.id).run();
         throw new HttpError(502, "The house model failed. You weren't charged.");
@@ -337,24 +343,45 @@ async function analyze(user, env, id) {
       await env.DB.batch(stmts);
       let tree;
       try { tree = parseModelTree(out.output); } catch (e) { throw new HttpError(502, `The model's answer couldn't be read: ${e.message}`); }
-      analysis = { source: "model", model: out.model, chargedMicro: charged, steps: tree.steps, at: Date.now() };
+      analysis = { source: "model", variant: variantOf(p.variant), model: out.model, chargedMicro: charged, steps: tree.steps, at: Date.now() };
     } else {
       const k = await env.DB.prepare("SELECT enc FROM api_keys WHERE user_id = ? AND provider = ?").bind(user.id, s.provider).first();
       if (!k) throw new HttpError(400, `Add your ${PROVIDERS[s.provider].label} API key in Settings first.`);
       let out, tree;
       try {
-        out = await runOwn(s.provider, await unseal(env, k.enc), s.models[s.provider], s.baseUrl, p.source);
+        out = await runOwn(s.provider, await unseal(env, k.enc), s.models[s.provider], s.baseUrl, p.source, p.variant);
         tree = parseModelTree(out.output);
       } catch (e) {
         throw new HttpError(502, String(e.message || e).slice(0, 300));
       }
-      analysis = { source: "model", model: out.model, chargedMicro: 0, steps: tree.steps, at: Date.now() };
+      analysis = { source: "model", variant: variantOf(p.variant), model: out.model, chargedMicro: 0, steps: tree.steps, at: Date.now() };
     }
   }
 
   await env.DB.prepare("UPDATE proofs SET analysis = ?, updated_at = ? WHERE id = ? AND user_id = ?")
     .bind(JSON.stringify(analysis), Date.now(), id, user.id).run();
   return getProof(user, env, id);
+}
+
+// ---------- Lemma of the Day ----------
+
+async function dailyList(user, env) {
+  const r = await env.DB.prepare("SELECT day, solved, tries, seconds FROM daily_results WHERE user_id = ? ORDER BY day DESC LIMIT 400").bind(user.id).all();
+  return json({ results: r.results.map(x => ({ ...x, solved: !!x.solved })) });
+}
+
+async function dailyPost(request, user, env) {
+  const b = await body(request);
+  const day = Math.floor(Number(b.day)), tries = Math.floor(Number(b.tries)), seconds = Math.floor(Number(b.seconds));
+  // Day 1 is 23 Nov 2026; allow a day of slack for time zones.
+  const maxDay = Math.floor((Date.now() - Date.UTC(2026, 10, 23)) / DAY_MS) + 2;
+  if (!(day >= 1 && day <= maxDay)) throw new HttpError(400, "That isn't a puzzle day.");
+  if (!(tries >= 1 && tries <= 3)) throw new HttpError(400, "Tries must be 1 to 3.");
+  if (!(seconds >= 0 && seconds < 86_400 * 2)) throw new HttpError(400, "Bad time.");
+  // First result for a day stands: no retrying for a better score.
+  await env.DB.prepare("INSERT OR IGNORE INTO daily_results (user_id, day, solved, tries, seconds, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(user.id, day, b.solved ? 1 : 0, tries, seconds, Date.now()).run();
+  return json({ ok: true });
 }
 
 // ---------- router ----------
@@ -378,6 +405,8 @@ async function api(request, env, url) {
     if (m === "PUT") return putKey(request, user, env, r[1]);
     if (m === "DELETE") { await env.DB.prepare("DELETE FROM api_keys WHERE user_id = ? AND provider = ?").bind(user.id, r[1]).run(); return json({ ok: true }); }
   }
+  if (path === "/api/daily" && m === "GET") return dailyList(user, env);
+  if (path === "/api/daily" && m === "POST") return dailyPost(request, user, env);
   if (path === "/api/proofs" && m === "GET") return listProofs(user, env);
   if (path === "/api/proofs" && m === "POST") return createProof(request, user, env);
   if ((r = path.match(/^\/api\/proofs\/([0-9a-f]{24})$/))) {
@@ -397,6 +426,8 @@ export default {
       if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
       if (url.pathname === "/" || url.pathname === "/index.html") return new Response(DEMO_HTML, { headers: HTML_HEADERS });
       if (url.pathname === "/app" || url.pathname === "/app/") return new Response(APP_HTML, { headers: HTML_HEADERS });
+      if (url.pathname === "/daily" || url.pathname === "/daily/") return new Response(DAILY_HTML, { headers: HTML_HEADERS });
+      if (url.pathname === "/blocks" || url.pathname === "/blocks/") return new Response(BLOCKS_HTML, { headers: HTML_HEADERS });
       if (url.pathname === "/themes.css") return new Response(THEMES_CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       if (url.pathname === "/themes.js") return new Response(THEMES_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" } });
       return new Response("Not found", { status: 404 });

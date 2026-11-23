@@ -84,6 +84,10 @@
   #settings h3 { margin: 22px 0 4px; font-size: 15px; }
   .credit { font: 700 22px var(--mono); }
   .empty { color: var(--quiet); padding: 40px 0; text-align: center; }
+  .chip { font: 600 11px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--quiet); white-space: nowrap; }
+  .chip.rules { border-color: var(--accent); color: var(--accent); }
+  .rulesrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 13.5px; }
+  .rulesrow select { width: auto; padding: 4px 8px; }
 </style>
 </head>
 <body>
@@ -94,6 +98,8 @@
   <nav class="nav" id="nav">
     <span id="lookPick"></span>
     <a href="/">Demo board</a>
+    <a href="/daily">Daily</a>
+    <a href="/blocks">Blocks</a>
     <span id="who" class="hint"></span>
     <button class="btn hidden" id="settingsBtn">Settings</button>
     <button class="btn hidden" id="signoutBtn">Sign out</button>
@@ -143,6 +149,9 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const money = micro => "$" + (micro / 1e6).toFixed(micro && Math.abs(micro) < 10000 ? 4 : 2);
 
 let me = null, proofs = [], current = null, selected = null, draftKind = "lean";
+const rulesOptions = v => Object.entries(me.variants || { standard: { label: "Standard" } })
+  .map(([k, x]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(x.label)}</option>`).join("");
+const rulesBlurb = v => esc(me.variants?.[v]?.blurb || "");
 
 async function call(method, path, data) {
   const r = await fetch(path, { method, headers: data ? { "content-type": "application/json" } : {}, body: data ? JSON.stringify(data) : undefined, credentials: "same-origin" });
@@ -204,7 +213,7 @@ async function refreshList() {
     const t = p.tally, w = c => t.total ? (100 * t[c] / t.total) : 0;
     return `<div class="item ${current?.id === p.id ? "sel" : ""}" data-id="${p.id}">
       <span class="mini">${["green", "yellow", "red", "unchecked"].map(c => `<i style="width:${w(c)}%;background:${COLORS[c].fg}"></i>`).join("")}</span>
-      <span class="t">${esc(p.title)}</span><span class="k">${p.kind === "lean" ? ".lean" : "sketch"}</span></div>`;
+      <span class="t">${esc(p.title)}</span>${p.variant && p.variant !== "standard" ? `<span class="chip rules">${esc(me.variants?.[p.variant]?.label || p.variant)}</span>` : ""}<span class="k">${p.kind === "lean" ? ".lean" : "sketch"}</span></div>`;
   }).join("") : `<p class="hint">No proofs yet.</p>`;
   document.querySelectorAll(".item").forEach(el => el.onclick = () => openProof(el.dataset.id));
 }
@@ -226,9 +235,12 @@ function showNew() {
     <label for="ptitle">Title</label>
     <input id="ptitle" type="text" maxlength="120" placeholder="Untitled proof">
     <div id="fileRow"><label for="pfile">Drop in a .lean file, or paste below</label><input id="pfile" type="file" accept=".lean,text/plain"></div>
+    <label for="prules">Rules</label>
+    <div class="rulesrow"><select id="prules">${rulesOptions("standard")}</select><span class="hint" id="prulesHint">${rulesBlurb("standard")}</span></div>
     <label for="psrc">Proof</label>
     <textarea id="psrc" spellcheck="false"></textarea>
     <div class="row"><button class="btn primary" id="saveBtn">Save and analyze</button><span class="msg" id="newMsg" role="status"></span></div>`;
+  $("prules").onchange = () => { $("prulesHint").innerHTML = rulesBlurb($("prules").value); };
   const setKind = k => {
     draftKind = k;
     document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === k));
@@ -249,7 +261,7 @@ function showNew() {
   $("saveBtn").onclick = async () => {
     $("saveBtn").disabled = true; $("newMsg").className = "msg"; $("newMsg").textContent = draftKind === "sketch" ? "Saving, then asking the model…" : "Saving…";
     try {
-      const p = await call("POST", "/api/proofs", { title: $("ptitle").value, kind: draftKind, source: $("psrc").value });
+      const p = await call("POST", "/api/proofs", { title: $("ptitle").value, kind: draftKind, source: $("psrc").value, variant: $("prules").value });
       current = p; await refreshList(); await runAnalysis(p.id);
     } catch (err) { $("newMsg").className = "msg err"; $("newMsg").textContent = err.message; $("saveBtn").disabled = false; }
   };
@@ -297,6 +309,8 @@ function renderProof(error) {
       <button class="btn" id="editBtn">Edit</button>
       <button class="btn danger" id="delBtn">Delete</button></div>
     <div class="hint">${p.kind === "lean" ? "Lean file" : "Sketch"} · ${by}</div>
+    <div class="rulesrow"><label for="vrules" style="margin:0">Rules</label><select id="vrules">${rulesOptions(p.variant || "standard")}</select>
+      <span class="hint">${rulesBlurb(p.variant || "standard")}${p.kind === "sketch" && p.variant !== "standard" ? " The model judges the sketch under these rules. Its verdicts stay unchecked until Lean runs, so nothing turns green yet." : ""}</span></div>
     <div class="msg ${error ? "err" : ""}" id="pMsg" role="status">${esc(error || "")}</div>
     ${a ? `<div class="boardgrid">
       <div class="panel bar" id="bar" aria-label="Eval bar"></div>
@@ -311,6 +325,15 @@ function renderProof(error) {
     await call("DELETE", `/api/proofs/${p.id}`); current = null; await refreshList(); proofs.length ? openProof(proofs[0].id) : showNew();
   };
   $("editBtn").onclick = () => showEdit();
+  $("vrules").onchange = async () => {
+    $("vrules").disabled = true; $("pMsg").className = "msg"; $("pMsg").textContent = "Switching rules…";
+    try {
+      current = await call("PUT", `/api/proofs/${p.id}`, { variant: $("vrules").value });
+      await refreshList();
+      // A Lean file re-reads for free. A sketch costs a model call, so wait for the Analyze button.
+      if (p.kind === "lean") await runAnalysis(p.id); else renderProof();
+    } catch (err) { renderProof(err.message); }
+  };
   if (a) { renderBar(steps); renderTree(steps); renderMoves(steps); }
 }
 
