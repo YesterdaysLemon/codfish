@@ -29,3 +29,11 @@ That deploy has to be run from the Windows side of Tome (for example a Codex ses
 - **Workers AI on the free plan.** The account is on the Workers Free plan, which allows 10,000 neurons a day (about 100 sketch analyses) and blocks the bigger models. Upgrade before opening the house model to the public.
 - **Deploys.** `npm run deploy` (`wrangler deploy`) needs a Cloudflare API token on the machine that runs it. Connecting the repo to Workers Builds in the dashboard would make every push to `main` deploy instead. Never rotate the `SECRET` Worker secret casually: rotating it makes every saved API key unreadable and signs everyone out.
 - **Rate limits.** Sign-in codes are limited per email (1 a minute, 5 an hour) and per IP (20 an hour). A Cloudflare rate-limiting rule on `/api/auth/*` would be a sturdier second layer.
+
+## Lemma of the Day, Blocks, variants
+
+- The daily bank has 14 hand-checked puzzles and repeats after day 14 (6 Dec 2026). Add more, or generate them once the engine can check answers.
+- Once Lean runs: check every daily answer and every Blocks proof with it, and only then let either page show green.
+- Leaderboards for the daily (results are already stored per user in `daily_results`).
+- Blocks: drag to reorder existing pieces (only arrows today), and import a Lean file back into blocks.
+- Variants: the Lean preamble for each rule set lives in both `src/llm.js` and `public/blocks.html`; move it to one place when the engine needs it.
